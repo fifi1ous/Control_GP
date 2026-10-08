@@ -1,0 +1,27 @@
+; Module-definition file for the subset of the Tesseract C API used by
+; Control_GP. CMake feeds this to lib.exe (`${CMAKE_AR}` on MSVC) to
+; generate an import library that links against libtesseract-5.dll.
+;
+; All symbols below were verified to exist in the UB Mannheim build of
+; libtesseract-5.dll (Tesseract 5.x). They are stable C-linkage exports
+; from `tesseract/capi.h`, so this file does not need to track upstream
+; C++ ABI changes.
+;
+; If we ever start calling additional C-API functions from OcrManager,
+; add their names here and CMake will regenerate the .lib on the next
+; build.
+
+LIBRARY libtesseract-5
+
+EXPORTS
+    TessBaseAPICreate
+    TessBaseAPIDelete
+    TessBaseAPIInit3
+    TessBaseAPIEnd
+    TessBaseAPISetImage
+    TessBaseAPISetSourceResolution
+    TessBaseAPISetVariable
+    TessBaseAPISetPageSegMode
+    TessBaseAPIMeanTextConf
+    TessBaseAPIGetUTF8Text
+    TessDeleteText

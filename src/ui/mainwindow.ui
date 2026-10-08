@@ -1,0 +1,647 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="enabled">
+   <bool>true</bool>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>940</width>
+    <height>591</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Hlavní okno</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QHBoxLayout" name="horizontalLayout">
+    <item>
+     <widget class="QTextEdit" name="textEditResults">
+      <property name="enabled">
+       <bool>true</bool>
+      </property>
+      <property name="readOnly">
+       <bool>true</bool>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>940</width>
+     <height>25</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuSoubor">
+    <property name="title">
+     <string>Soubor</string>
+    </property>
+    <addaction name="actionImportSlozky"/>
+   </widget>
+   <widget class="QMenu" name="menuKontrola">
+    <property name="title">
+     <string>Kontrola</string>
+    </property>
+    <addaction name="separator"/>
+    <addaction name="actionKlasifikaceSouboru"/>
+    <addaction name="actionAutomatickaKontrola"/>
+    <addaction name="actionTiskProtokol"/>
+    <addaction name="actionTiskVysledky"/>
+    <addaction name="separator"/>
+    <addaction name="actionVycistitVysledky"/>
+    <addaction name="separator"/>
+    <addaction name="actionSmazatVysledky"/>
+   </widget>
+   <widget class="QMenu" name="menuGP">
+    <property name="title">
+     <string>GP</string>
+    </property>
+    <widget class="QMenu" name="menuKontrola_2">
+     <property name="title">
+      <string>Kontrola</string>
+     </property>
+     <addaction name="actionForm_ln_kontrola"/>
+     <addaction name="separator"/>
+     <addaction name="actionKontrolaSS"/>
+     <addaction name="actionKontrola_vykaz"/>
+     <addaction name="actionKontrolaPopispole"/>
+    </widget>
+    <widget class="QMenu" name="menuN_hled_n_le_itost">
+     <property name="title">
+      <string>Náhled náležitostí</string>
+     </property>
+     <addaction name="actionSeznamSouradnic"/>
+     <addaction name="actionVykazVymer_2"/>
+     <addaction name="actionPopisovePole_2"/>
+     <addaction name="actionBPEJ_2"/>
+     <addaction name="actionMapovePole"/>
+     <addaction name="actionKladMapovychDilu"/>
+    </widget>
+    <addaction name="separator"/>
+    <addaction name="actionNactiGP"/>
+    <addaction name="separator"/>
+    <addaction name="actionNahledUprava"/>
+    <addaction name="actionSegmentace"/>
+    <addaction name="separator"/>
+    <addaction name="menuKontrola_2"/>
+    <addaction name="separator"/>
+    <addaction name="menuN_hled_n_le_itost"/>
+   </widget>
+   <widget class="QMenu" name="menuZPMZ">
+    <property name="title">
+     <string>ZPMZ</string>
+    </property>
+    <widget class="QMenu" name="menuPopisov_pole">
+     <property name="title">
+      <string>Popisové pole</string>
+     </property>
+     <addaction name="actionNacist"/>
+     <addaction name="actionNahledUprava_2"/>
+     <addaction name="separator"/>
+     <addaction name="actionKontrola_3"/>
+     <addaction name="separator"/>
+     <addaction name="actionOdebrat"/>
+    </widget>
+    <widget class="QMenu" name="menuN_rt">
+     <property name="title">
+      <string>Náčrt</string>
+     </property>
+     <addaction name="actionNacist_2"/>
+     <addaction name="actionNahledUprava_3"/>
+     <addaction name="separator"/>
+     <addaction name="actionKontrola_4"/>
+     <addaction name="separator"/>
+     <addaction name="actionOdebrat_2"/>
+    </widget>
+    <widget class="QMenu" name="menuZ_pisn_k_m_en">
+     <property name="title">
+      <string>Zápisník měření</string>
+     </property>
+     <addaction name="actionNacist_3"/>
+     <addaction name="actionNahledUprava_4"/>
+     <addaction name="separator"/>
+     <addaction name="actionKontrola_5"/>
+     <addaction name="separator"/>
+     <addaction name="actionOdebrat_3"/>
+    </widget>
+    <widget class="QMenu" name="menuProtokol_o_v_po_tech">
+     <property name="title">
+      <string>Protokol o výpočtech</string>
+     </property>
+     <addaction name="actionNacist_4"/>
+     <addaction name="actionNahledUprava_5"/>
+     <addaction name="separator"/>
+     <addaction name="actionKontrola_6"/>
+     <addaction name="separator"/>
+     <addaction name="actionOdebrat_4"/>
+    </widget>
+    <widget class="QMenu" name="menuV_m_ry">
+     <property name="title">
+      <string>Výměry</string>
+     </property>
+     <addaction name="actionNacist_5"/>
+     <addaction name="actionNahledUprava_6"/>
+     <addaction name="separator"/>
+     <addaction name="actionKontrola_7"/>
+     <addaction name="separator"/>
+     <addaction name="actionOdebrat_5"/>
+    </widget>
+    <widget class="QMenu" name="menuN_vrh_zm_ny">
+     <property name="title">
+      <string>Návrh změny</string>
+     </property>
+     <addaction name="actionNacist_6"/>
+     <addaction name="separator"/>
+     <addaction name="separator"/>
+     <addaction name="actionOdebrat_6"/>
+    </widget>
+    <widget class="QMenu" name="menuSezn_men_vlstn_k">
+     <property name="title">
+      <string>Seznámení vlstníků</string>
+     </property>
+     <addaction name="actionNacist_7"/>
+     <addaction name="actionNahledUprava_8"/>
+     <addaction name="separator"/>
+     <addaction name="actionKontrola_9"/>
+     <addaction name="separator"/>
+     <addaction name="actionOdebrat_7"/>
+    </widget>
+    <widget class="QMenu" name="menuPodn_t_na_opravu">
+     <property name="title">
+      <string>Podnět na opravu</string>
+     </property>
+     <addaction name="actionNacist_8"/>
+     <addaction name="actionNahledUprava_9"/>
+     <addaction name="separator"/>
+     <addaction name="actionKontrola_10"/>
+     <addaction name="separator"/>
+     <addaction name="actionOdebrat_8"/>
+    </widget>
+    <widget class="QMenu" name="menuDSPS">
+     <property name="title">
+      <string>DSPS</string>
+     </property>
+     <addaction name="actionNacist_9"/>
+     <addaction name="actionNahledUprava_10"/>
+     <addaction name="separator"/>
+     <addaction name="actionKontrola_11"/>
+     <addaction name="separator"/>
+     <addaction name="actionOdebrat_9"/>
+    </widget>
+    <widget class="QMenu" name="menuDokumentace_o_vyty_en">
+     <property name="title">
+      <string>Dokumentace o vytyčení</string>
+     </property>
+     <addaction name="actionNacist_10"/>
+     <addaction name="actionNahledUprava_11"/>
+     <addaction name="separator"/>
+     <addaction name="actionKontrola_12"/>
+     <addaction name="separator"/>
+     <addaction name="actionOdebrat_10"/>
+    </widget>
+    <widget class="QMenu" name="menuGNSS">
+     <property name="title">
+      <string>GNSS</string>
+     </property>
+     <addaction name="actionNahledUprava_12"/>
+     <addaction name="actionKontrola_2"/>
+     <addaction name="separator"/>
+     <addaction name="actionOdebrat_11"/>
+    </widget>
+    <addaction name="actionKontrola"/>
+    <addaction name="separator"/>
+    <addaction name="menuPopisov_pole"/>
+    <addaction name="menuN_rt"/>
+    <addaction name="menuZ_pisn_k_m_en"/>
+    <addaction name="menuProtokol_o_v_po_tech"/>
+    <addaction name="menuV_m_ry"/>
+    <addaction name="menuN_vrh_zm_ny"/>
+    <addaction name="menuSezn_men_vlstn_k"/>
+    <addaction name="menuPodn_t_na_opravu"/>
+    <addaction name="menuDSPS"/>
+    <addaction name="menuDokumentace_o_vyty_en"/>
+    <addaction name="menuGNSS"/>
+   </widget>
+   <widget class="QMenu" name="menu_dost">
+    <property name="title">
+     <string>Žádost</string>
+    </property>
+    <addaction name="actionNacistZadost"/>
+    <addaction name="actionNahled"/>
+    <addaction name="actionKontrola_13"/>
+   </widget>
+   <addaction name="menuSoubor"/>
+   <addaction name="menuKontrola"/>
+   <addaction name="menuGP"/>
+   <addaction name="menuZPMZ"/>
+   <addaction name="menu_dost"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionOtevri">
+   <property name="text">
+    <string>Import souborů</string>
+   </property>
+   <property name="toolTip">
+    <string>Import jednotlivých, nebo více souborů</string>
+   </property>
+  </action>
+  <action name="actionAutomatickaKontrola">
+   <property name="text">
+    <string>Automatická kontrola</string>
+   </property>
+  </action>
+  <action name="actionTiskProtokol">
+   <property name="icon">
+    <iconset theme="QIcon::ThemeIcon::DocumentSave"/>
+   </property>
+   <property name="text">
+    <string>Uložit protokol</string>
+   </property>
+  </action>
+  <action name="actionTiskVysledky">
+   <property name="icon">
+    <iconset theme="QIcon::ThemeIcon::DocumentSave"/>
+   </property>
+   <property name="text">
+    <string>Uložit výsledky</string>
+   </property>
+  </action>
+  <action name="actionNahledSegmentace">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionOtevriSoubor">
+   <property name="text">
+    <string>Otevři soubor</string>
+   </property>
+  </action>
+  <action name="actionNactiGP">
+   <property name="text">
+    <string>Načíst GP</string>
+   </property>
+   <property name="toolTip">
+    <string>Načíst GP</string>
+   </property>
+  </action>
+  <action name="actionSegmentace">
+   <property name="text">
+    <string>Segmentace</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionRozdelit">
+   <property name="text">
+    <string>Rozdělit</string>
+   </property>
+  </action>
+  <action name="actionMapovPole">
+   <property name="text">
+    <string>Mapové pole</string>
+   </property>
+  </action>
+  <action name="actionSS">
+   <property name="text">
+    <string>SS</string>
+   </property>
+  </action>
+  <action name="actionVykazVymer">
+   <property name="text">
+    <string>Výkaz výměr</string>
+   </property>
+  </action>
+  <action name="actionBPEJ">
+   <property name="text">
+    <string>BPEJ</string>
+   </property>
+  </action>
+  <action name="actionPopisovePole">
+   <property name="text">
+    <string>Popisové pole</string>
+   </property>
+  </action>
+  <action name="actionKladList">
+   <property name="text">
+    <string>Klad listů</string>
+   </property>
+  </action>
+  <action name="actionVycistitVysledky">
+   <property name="text">
+    <string>Vyčistit výsledky</string>
+   </property>
+  </action>
+  <action name="actionSmazatVysledky">
+   <property name="text">
+    <string>Smazat výsledky</string>
+   </property>
+  </action>
+  <action name="actionImportSlozky">
+   <property name="text">
+    <string>Import složky</string>
+   </property>
+  </action>
+  <action name="actionNacistZadost">
+   <property name="text">
+    <string>Načíst Žádost</string>
+   </property>
+  </action>
+  <action name="actionNahled">
+   <property name="text">
+    <string>Náhled</string>
+   </property>
+  </action>
+  <action name="actionKontrola">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionNacist">
+   <property name="text">
+    <string>Načíst</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava_2">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionKontrola_3">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionNacist_2">
+   <property name="text">
+    <string>Načíst</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava_3">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionKontrola_4">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionNacist_3">
+   <property name="text">
+    <string>Načíst</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava_4">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionKontrola_5">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionNacist_4">
+   <property name="text">
+    <string>Načíst</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava_5">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionKontrola_6">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionNacist_5">
+   <property name="text">
+    <string>Načíst</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava_6">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionKontrola_7">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionNacist_6">
+   <property name="text">
+    <string>Načíst</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava_7">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionKontrola_8">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionNacist_7">
+   <property name="text">
+    <string>Načíst</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava_8">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionKontrola_9">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionNacist_8">
+   <property name="text">
+    <string>Načíst</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava_9">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionKontrola_10">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionNacist_9">
+   <property name="text">
+    <string>Načíst</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava_10">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionKontrola_11">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionNacist_10">
+   <property name="text">
+    <string>Načíst</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava_11">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionKontrola_12">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionNahledUprava_12">
+   <property name="text">
+    <string>Náhled a úprava</string>
+   </property>
+  </action>
+  <action name="actionKontrola_2">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionKlasifikaceSouboru">
+   <property name="text">
+    <string>Formální kontrola a klasifikace</string>
+   </property>
+  </action>
+  <action name="actionKontrolaSS">
+   <property name="text">
+    <string>Kontrola ss</string>
+   </property>
+  </action>
+  <action name="actionKontrola_vykaz">
+   <property name="text">
+    <string>Kontrola výkazu výměr</string>
+   </property>
+  </action>
+  <action name="actionKontrolaPopispole">
+   <property name="text">
+    <string>Kontrola popisového pole</string>
+   </property>
+  </action>
+  <action name="actionSeznamSouradnic">
+   <property name="text">
+    <string>Seznam souřadnic</string>
+   </property>
+  </action>
+  <action name="actionVykazVymer_2">
+   <property name="text">
+    <string>Výkaz výměr</string>
+   </property>
+  </action>
+  <action name="actionPopisovePole_2">
+   <property name="text">
+    <string>Popisové pole</string>
+   </property>
+  </action>
+  <action name="actionBPEJ_2">
+   <property name="text">
+    <string>BPEJ</string>
+   </property>
+  </action>
+  <action name="actionMapovePole">
+   <property name="text">
+    <string>Mapové pole</string>
+   </property>
+  </action>
+  <action name="actionKladMapovychDilu">
+   <property name="text">
+    <string>Klad mapových listů</string>
+   </property>
+  </action>
+  <action name="actionOdebrat">
+   <property name="text">
+    <string>Odebrat</string>
+   </property>
+  </action>
+  <action name="actionOdebrat_2">
+   <property name="text">
+    <string>Odebrat</string>
+   </property>
+  </action>
+  <action name="actionOdebrat_3">
+   <property name="text">
+    <string>Odebrat</string>
+   </property>
+  </action>
+  <action name="actionOdebrat_4">
+   <property name="text">
+    <string>Odebrat</string>
+   </property>
+  </action>
+  <action name="actionOdebrat_5">
+   <property name="text">
+    <string>Odebrat</string>
+   </property>
+  </action>
+  <action name="actionOdebrat_6">
+   <property name="text">
+    <string>Odebrat</string>
+   </property>
+  </action>
+  <action name="actionOdebrat_7">
+   <property name="text">
+    <string>Odebrat</string>
+   </property>
+  </action>
+  <action name="actionOdebrat_8">
+   <property name="text">
+    <string>Odebrat</string>
+   </property>
+  </action>
+  <action name="actionOdebrat_9">
+   <property name="text">
+    <string>Odebrat</string>
+   </property>
+  </action>
+  <action name="actionOdebrat_10">
+   <property name="text">
+    <string>Odebrat</string>
+   </property>
+  </action>
+  <action name="actionOdebrat_11">
+   <property name="text">
+    <string>Odebrat</string>
+   </property>
+  </action>
+  <action name="actionKontrola_13">
+   <property name="text">
+    <string>Kontrola</string>
+   </property>
+  </action>
+  <action name="actionForm_ln_kontrola">
+   <property name="text">
+    <string>Formální kontrola</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
