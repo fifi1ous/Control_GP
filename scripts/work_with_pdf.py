@@ -2,7 +2,7 @@ import os
 import re
 
 from process_pdf import ProcessPDF
-from ultralytics import YOLO
+from onnx_inference import OnnxClassifier
 
 
 def _annotation_filename(page_index: int) -> str:
@@ -26,25 +26,20 @@ def segment_geometric_plan(pdf_path, path_GP_folder, model, path_to_annotations_
     os.makedirs(path_to_annotations_folder, exist_ok=True)
 
     for i, page_img_path in enumerate(pages):
-        results = model(page_img_path)
+        result = model(page_img_path)
 
         annot_file = os.path.join(path_to_annotations_folder, _annotation_filename(i))
         with open(annot_file, "w") as f:
-            for result in results:
-                # YOLO stores the source image shape as (height, width)
-                height_image, width_image = result.orig_shape
-                for box in result.boxes:
-                    # Extract coordinates from YOLO
-                    x1, y1, x2, y2 = [v.item() for v in box.xyxy[0]]
-                    class_id = int(box.cls[0].item())
+            # source image shape is (height, width)
+            height_image, width_image = result.orig_shape
+            for box in result.detections:
+                # Convert to PDF points
+                nx1, ny1, nx2, ny2 = convert_image_coordinates_to_normalized(
+                    box.x1, box.y1, box.x2, box.y2, (width_image, height_image)
+                )
 
-                    # Convert to PDF points
-                    nx1, ny1, nx2, ny2 = convert_image_coordinates_to_normalized(
-                        x1, y1, x2, y2, (width_image, height_image)
-                    )
-
-                    # Save annotation
-                    f.write(f"{class_id} {nx1} {ny1} {nx2} {ny2}\n")
+                # Save annotation
+                f.write(f"{box.cls} {nx1} {ny1} {nx2} {ny2}\n")
 
 def convert_image_coordinates_to_normalized(x1, y1, x2, y2, size_of_image):
     width_image, height_image = size_of_image
@@ -241,12 +236,12 @@ def classification(pdf_path, save_path, path_to_model):
     pages = pdf_processor.convert_pdf_to_images(save_path=save_path)
 
     classifications = []
-    model = YOLO(path_to_model)
+    # accept either a preloaded OnnxClassifier (passed from C++) or a path to the .onnx file
+    model = path_to_model if isinstance(path_to_model, OnnxClassifier) else OnnxClassifier(path_to_model)
 
     for page_img_path in pages:
-        results = model(page_img_path)
-        top_class_id = results[0].probs.top1
-        classifications.append(results[0].names[top_class_id])
+        result = model(page_img_path)
+        classifications.append(result.top1_name)
 
     if not classifications:
         return None, []

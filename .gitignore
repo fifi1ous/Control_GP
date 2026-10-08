@@ -1,0 +1,29 @@
+# Qt Creator
+*.pro.user*
+CMakeLists.txt.user*
+.qtcreator/
+
+# Build
+build/
+build-*/
+out/
+cmake-build-*/
+
+# Generované závislosti (stahuje setup_deps.ps1)
+python-embed/
+poppler/
+
+# Pracovní data
+workspace/*
+!workspace/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Systém a IDE
+.vs/
+.vscode/
+Thumbs.db
+desktop.ini

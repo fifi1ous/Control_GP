@@ -84,7 +84,7 @@ void PythonManager::bootstrapInterpreter()
 
     appendPath(pyStdlib);        // stdlib (encodings, os, io, ...)
     appendPath(pyHome);          // python-embed itself (DLLs, etc.)
-    appendPath(pySitePackages);  // pip-installed packages (numpy, ultralytics, ...)
+    appendPath(pySitePackages);  // pip-installed packages (numpy, onnxruntime, ...)
     appendPath(scriptsDir);      // our own Python modules (work_with_pdf.py)
 
     // Fire up the interpreter.
@@ -121,20 +121,20 @@ void PythonManager::initialize()
         // Add scripts directory (your .py files)
         sys.attr("path").attr("append")(pathToScripts().toStdString());
 
-        // Add bundled site-packages (pypdf, ultralytics, etc.)
+        // Add bundled site-packages (pypdf, onnxruntime, etc.)
         QString sitePackages = pathToWorkspace() + "/../python/Lib/site-packages";
         sys.attr("path").attr("insert")(0, sitePackages.toStdString());
 
-        // Pre-import the bridge module (triggers import of ultralytics, pypdf, etc.)
+        // Pre-import the bridge module (triggers import of onnxruntime, pypdf, etc.)
         s_bridge = py::module_::import("work_with_pdf");
         s_bridge_popispole = py::module_::import("process_popispole");
         s_bridge_vymery = py::module_::import("process_vymery");
         s_bridge_ss = py::module_::import("process_ss");
 
-        // Pre-load the YOLO model so it stays in memory
-        py::module_ ultralytics = py::module_::import("ultralytics");
-        s_yoloModel = ultralytics.attr("YOLO")(pathToSegmentModel().toStdString());
-        s_classify_model = ultralytics.attr("YOLO")(pathToClassifyModel().toStdString());
+        // Pre-load the YOLO ONNX models so they stay in memory
+        py::module_ onnxInference = py::module_::import("onnx_inference");
+        s_yoloModel = onnxInference.attr("OnnxDetector")(pathToSegmentModel().toStdString());
+        s_classify_model = onnxInference.attr("OnnxClassifier")(pathToClassifyModel().toStdString());
 
         s_initialized = true;
         qDebug() << "PythonManager: inicializace dokončena (moduly a YOLO model načteny).";

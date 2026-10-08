@@ -29,7 +29,7 @@ public:
     static void shutdownInterpreter();
 
     // Call once after QApplication is created to set up sys.path
-    // and pre-import heavy libraries (ultralytics/torch).
+    // and pre-import heavy libraries (onnxruntime) and load the ONNX models.
     static void initialize();
     static void finalize();
 

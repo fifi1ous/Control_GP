@@ -1,0 +1,14 @@
+# Python dependencies for Control_GP scripts (Python 3.13)
+
+# PDF handling
+pypdf==6.11.0
+pdf2image==1.17.0      # also requires Poppler binaries on PATH
+pillow==12.2.0
+
+# Object detection / classification (YOLO models exported to ONNX)
+onnxruntime==1.30.0
+opencv-python-headless==4.13.0.92
+numpy==2.4.6
+
+# HTTP
+requests==2.34.2

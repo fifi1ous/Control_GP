@@ -32,12 +32,12 @@ public:
 
     static inline QString getPathToModelSegment()
     {
-        return QDir(AddPath::getModelsPath()).filePath("segment.pt");
+        return QDir(AddPath::getModelsPath()).filePath("segment.onnx");
     }
 
     static inline QString getPathToModelClassify()
     {
-        return QDir(AddPath::getModelsPath()).filePath("classification.pt");
+        return QDir(AddPath::getModelsPath()).filePath("classification.onnx");
     }
 
     static inline QString getGPPath()

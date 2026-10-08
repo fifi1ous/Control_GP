@@ -1,0 +1,22 @@
+{
+  "python": {
+    "version": "3.13.7",
+    "url": "",
+    "sha256": ""
+  },
+  "poppler": {
+    "version": "24.08.0-0",
+    "url": "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip",
+    "sha256": ""
+  },
+  "models": {
+    "version": "",
+    "url": "",
+    "sha256": ""
+  },
+  "database": {
+    "version": "",
+    "url": "",
+    "sha256": ""
+  }
+}
