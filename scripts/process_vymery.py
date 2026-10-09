@@ -90,5 +90,3 @@ def extract_vymery_vypocet(pdf_path):
                 vymery_processed.append(v)
                 
     return vymery_processed
-
-#print(extract_vymery_vypocet(r"C:\Users\phill\Katastr\Katastr_AI\data\raw\Neuzil\PGP-151_2024_306\782084_ZPMZ_02858_vymery.pdf"))

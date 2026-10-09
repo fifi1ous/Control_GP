@@ -11,12 +11,10 @@ from PIL import ImageOps
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _APP_DIR = os.path.dirname(_SCRIPT_DIR)
+# Bundled Poppler only — the app never relies on Poppler being on PATH.
+# Running from the source tree works too: tools/setup_deps.ps1 puts poppler/
+# into the repository root, which is the parent of scripts/ there as well.
 POPPLER_BIN = os.path.join(_APP_DIR, "poppler", "Library", "bin")
-
-# Fallback to None if the bundled directory doesn't exist — pdf2image will
-# then look in PATH (useful during local development without bundled poppler).
-if not os.path.isdir(POPPLER_BIN):
-    POPPLER_BIN = None
 
 
 class ProcessPDF:
@@ -392,6 +390,11 @@ class ProcessPDF:
         # Create directories if they don't exist
         if save_path:
             os.makedirs(save_path, exist_ok=True)
+
+        if not os.path.isdir(POPPLER_BIN):
+            raise FileNotFoundError(
+                f"Bundled Poppler not found: {POPPLER_BIN} "
+                "(run tools/setup_deps.ps1 and rebuild)")
 
         try:
             pages = convert_from_path(target_path, dpi=dpi, use_cropbox=True, poppler_path=POPPLER_BIN)

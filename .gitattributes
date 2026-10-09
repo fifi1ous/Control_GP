@@ -1,0 +1,25 @@
+# Normalize line endings of all text files in the repository
+* text=auto
+
+# Windows-native sources
+*.cpp   text eol=crlf
+*.h     text eol=crlf
+*.ui    text eol=crlf
+*.ps1   text eol=crlf
+
+# Python scripts
+*.py    text eol=lf
+
+# Binary files
+*.png         binary
+*.ico         binary
+*.pdf         binary
+*.onnx        binary
+*.pt          binary
+*.db          binary
+*.sqlite      binary
+*.dll         binary
+*.lib         binary
+*.exe         binary
+*.zip         binary
+*.traineddata binary

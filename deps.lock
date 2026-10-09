@@ -2,21 +2,11 @@
   "python": {
     "version": "3.13.7",
     "url": "",
-    "sha256": ""
+    "sha256": "F6CCA216A359BE84797CABB54149CE5E062AFB16CC7567EB7FC51CACB2D86B65"
   },
   "poppler": {
     "version": "24.08.0-0",
     "url": "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip",
-    "sha256": ""
-  },
-  "models": {
-    "version": "",
-    "url": "",
-    "sha256": ""
-  },
-  "database": {
-    "version": "",
-    "url": "",
-    "sha256": ""
+    "sha256": "58A6F9AE269756231D2F9AA6CBA39D75FEC6DEACAF3C4A50683383B5F3D5A527"
   }
 }

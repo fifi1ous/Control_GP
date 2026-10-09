@@ -15,7 +15,6 @@ public:
     static void deleteFiles();
 
 private:
-    static void deleteAnnotations();
     static void deleteFilesInFolder(const QString& path);
 };
 

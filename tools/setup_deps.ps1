@@ -6,8 +6,6 @@
     Reads deps.lock and requirements.txt from the repository root and fills:
         python-embed/   embeddable Python + packages from requirements.txt
         poppler/        Poppler binaries (used by pdf2image)
-        models/         ONNX models        (only if configured in deps.lock)
-        database/       database files     (only if configured in deps.lock)
 
     Safe to run repeatedly: parts that are already in the right version are
     skipped. Changing requirements.txt re-runs only the pip install.
@@ -18,7 +16,7 @@
     Delete and re-create every selected component from scratch.
 
 .PARAMETER Only
-    Limit the run to some components: python, poppler, models, database.
+    Limit the run to some components: python, poppler.
 
 .PARAMETER TesseractDir
     Tesseract installation to check (not installed by this script).
@@ -32,13 +30,14 @@
 [CmdletBinding()]
 param(
     [switch]$Force,
-    [ValidateSet('python', 'poppler', 'models', 'database')]
+    [ValidateSet('python', 'poppler')]
     [string[]]$Only,
     [string]$TesseractDir = 'C:\Program Files\Tesseract-OCR'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$env:PYTHONNOUSERSITE = '1'                # keep the user's site-packages out of python-embed's pip
 $ProgressPreference = 'SilentlyContinue'   # makes Invoke-WebRequest much faster in PS 5.1
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -199,7 +198,7 @@ function Install-Python {
     Write-Ok "Python $version ready in python-embed\"
 }
 
-# Generic "download a zip and extract it" component (poppler, models, database)
+# Generic "download a zip and extract it" component (poppler)
 function Install-Archive([string]$Name, [string]$CheckFile) {
     $entry   = Get-Prop $Lock $Name
     $url     = Get-Prop $entry 'url'
@@ -278,7 +277,7 @@ if (-not (Test-Path -LiteralPath $LockFile)) { throw "deps.lock not found in $Re
 if (-not (Test-Path -LiteralPath $ReqFile))  { throw "requirements.txt not found in $RepoRoot" }
 
 $Lock = Get-Content -LiteralPath $LockFile -Raw | ConvertFrom-Json
-$components = if ($Only) { $Only } else { @('python', 'poppler', 'models', 'database') }
+$components = if ($Only) { $Only } else { @('python', 'poppler') }
 
 foreach ($c in $components) {
     switch ($c) {

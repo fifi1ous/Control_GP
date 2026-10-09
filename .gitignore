@@ -12,6 +12,7 @@ cmake-build-*/
 # Generované závislosti (stahuje setup_deps.ps1)
 python-embed/
 poppler/
+.deps-cache/
 
 # Pracovní data
 workspace/*

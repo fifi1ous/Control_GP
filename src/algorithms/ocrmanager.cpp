@@ -6,6 +6,8 @@
 #include <QFileInfo>
 #include <QDebug>
 #include <QByteArray>
+#include <QCoreApplication>
+#include <QDir>
 
 // CONTROL_GP_TESSDATA_PATH is injected from CMake (target_compile_definitions)
 // and points at e.g. "C:/Program Files/Tesseract-OCR/tessdata". Hardcoding
@@ -54,6 +56,21 @@ static constexpr int kMinAcceptableConfidence = 20;
 
 void* OcrManager::s_tessApi = nullptr;
 
+namespace {
+
+// Prefer the tessdata/ deployed next to the exe (copied by the CMake
+// POST_BUILD step), so the app does not depend on where Tesseract is
+// installed. Fall back to the build-time path from CMake.
+QByteArray tessdataPath()
+{
+    const QString local = QDir(QCoreApplication::applicationDirPath()).filePath("tessdata");
+    if (QFileInfo::exists(QDir(local).filePath(QString(kTessLanguage) + ".traineddata")))
+        return QDir::toNativeSeparators(local).toLocal8Bit();   // Tesseract opens files via the ANSI API
+    return QByteArray(CONTROL_GP_TESSDATA_PATH);
+}
+
+} // namespace
+
 bool OcrManager::ensureInitialized()
 {
     if (s_tessApi) {
@@ -66,11 +83,12 @@ bool OcrManager::ensureInitialized()
         return false;
     }
 
-    const int rc = TessBaseAPIInit3(api, CONTROL_GP_TESSDATA_PATH, kTessLanguage);
+    const QByteArray tessdata = tessdataPath();
+    const int rc = TessBaseAPIInit3(api, tessdata.constData(), kTessLanguage);
     if (rc != 0) {
         qWarning() << "OcrManager: TessBaseAPIInit3 selhal pro jazyk"
                    << kTessLanguage
-                   << "(tessdata:" << CONTROL_GP_TESSDATA_PATH << ")";
+                   << "(tessdata:" << tessdata << ")";
         TessBaseAPIDelete(api);
         return false;
     }

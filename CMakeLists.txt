@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
-project(Control_GP LANGUAGES CXX)
+project(Control_GP VERSION 0.1.0 LANGUAGES CXX)
+
+if(NOT MSVC)
+    message(FATAL_ERROR "Control_GP currently supports only MSVC on Windows.")
+endif()
+
+option(CONTROL_GP_DEPLOY "Copy runtime dependencies next to the exe" ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,13 +19,13 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Pdf PdfWidgets)
 
 # ---- Python must be found BEFORE pybind11 ----
 set(PYBIND11_FINDPYTHON ON)
-find_package(Python REQUIRED COMPONENTS Interpreter Development)
+find_package(Python 3.13 EXACT REQUIRED COMPONENTS Interpreter Development)
 
 include(FetchContent)
 FetchContent_Declare(
   pybind11
   GIT_REPOSITORY https://github.com/pybind/pybind11.git
-  GIT_TAG v2.11.1
+  GIT_TAG v2.13.6
 )
 FetchContent_MakeAvailable(pybind11)
 
@@ -96,7 +102,7 @@ add_executable(Control_GP WIN32
     src/ui/displaygnss.h
     src/ui/displaygnss.ui
 
-    icons.qrc
+    Icons/icons.qrc
 
 
     # =========================
@@ -162,16 +168,13 @@ add_executable(Control_GP WIN32
     src/algorithms/parsetext.cpp
 )
 
-add_definitions(-DQT_NO_KEYWORDS)
-
-target_link_directories(Control_GP PRIVATE "${Python_LIBRARY_DIRS}")
+target_compile_definitions(Control_GP PRIVATE QT_NO_KEYWORDS)
 
 target_link_libraries(Control_GP PRIVATE
     Qt6::Widgets
     pybind11::embed
     Qt6::Pdf
     Qt6::PdfWidgets
-    ${Python_LIBRARIES}
     tesseract_capi
 )
 
@@ -187,22 +190,12 @@ target_include_directories(Control_GP PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/structures
 )
 
-set(WORKSPACE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/workspace")
-set(MODELS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/models")
-set(SCRIPTS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
-set(DATABASE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/database")
-
-file(GLOB PYTHON_DLLS "${Python_RUNTIME_LIBRARY_DIRS}/python3*.dll")
-
-if(WIN32)
+if(CONTROL_GP_DEPLOY AND WIN32)
     get_target_property(_qmake_executable Qt6::qmake IMPORTED_LOCATION)
     get_filename_component(_qt_bin_dir "${_qmake_executable}" DIRECTORY)
     find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${_qt_bin_dir}")
 
     if(WINDEPLOYQT_EXECUTABLE)
-        # Get the Python DLL directory
-        get_filename_component(Python_DLL_DIR "${Python_RUNTIME_LIBRARY_DIRS}" ABSOLUTE)
-
         add_custom_command(TARGET Control_GP POST_BUILD
           COMMAND "${WINDEPLOYQT_EXECUTABLE}" --verbose 0 --no-compiler-runtime "$<TARGET_FILE:Control_GP>"
 
@@ -224,6 +217,17 @@ if(WIN32)
           COMMAND ${CMAKE_COMMAND} -DSRC="${CMAKE_CURRENT_SOURCE_DIR}/workspace" -DDST="$<TARGET_FILE_DIR:Control_GP>/workspace" -P "${CMAKE_CURRENT_SOURCE_DIR}/sync_dir.cmake"
           COMMAND ${CMAKE_COMMAND} -DSRC="${CMAKE_CURRENT_SOURCE_DIR}/database" -DDST="$<TARGET_FILE_DIR:Control_GP>/database" -P "${CMAKE_CURRENT_SOURCE_DIR}/sync_dir.cmake"
           COMMENT "Deploying Qt and syncing Python + scripts + models (incremental)..."
+        )
+    endif()
+
+    # Czech OCR data next to the exe, so OCR does not depend on the Tesseract install path.
+    if(EXISTS "${TESSERACT_TESSDATA_DIR}/ces.traineddata")
+        add_custom_command(TARGET Control_GP POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Control_GP>/tessdata"
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${TESSERACT_TESSDATA_DIR}/ces.traineddata"
+          "$<TARGET_FILE_DIR:Control_GP>/tessdata/"
+          COMMENT "Copying Tesseract ces.traineddata..."
         )
     endif()
 endif()
