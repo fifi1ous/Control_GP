@@ -1,0 +1,27 @@
+Control_GP
+==========
+
+Kontrola geometrických plánů, ZPMZ a žádostí proti datům VFK.
+
+SPUŠTĚNÍ
+1. Rozbalte celý ZIP do složky, kam máte právo zápisu
+   (například Dokumenty\Control_GP). Nerozbalujte do Program Files.
+2. Spusťte Control_GP.exe.
+3. Při prvním spuštění se aplikace zeptá na stažení:
+   - Python knihoven (řádově 100 MB), které stáhne sama,
+   - Poppleru, který stáhne automaticky, nebo otevře odkaz v prohlížeči
+     a ZIP rozbalíte do složky aplikace sami.
+   Je potřeba připojení k internetu. Stahuje se jen jednou.
+
+Pokud první příprava selže, spusťte Setup.cmd a sledujte výpis.
+
+POŽADAVKY
+- Windows 10 nebo 11, 64bit
+- připojení k internetu při prvním spuštění
+
+LICENCE
+- Kód aplikace: MIT (soubor LICENSE)
+- Modely ve složce models: AGPL-3.0 (models\LICENSE)
+- Komponenty třetích stran: THIRD_PARTY_LICENSES.md a složka licenses
+
+Zdrojové kódy: https://github.com/fifi1ous/Control_GP

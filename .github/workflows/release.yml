@@ -1,0 +1,202 @@
+# Builds Control_GP on Windows and publishes a ready-to-run ZIP.
+#
+#   merge / push to main  -> build; if the version in CMakeLists.txt
+#                            (project(Control_GP VERSION x.y.z)) has no release
+#                            yet, a GitHub Release vx.y.z is created with the ZIP
+#   pull request into main -> test build, ZIP as a workflow artifact
+#   Actions -> Release -> Run workflow -> test build, ZIP as a workflow artifact
+#                            (the button appears once this file is on main)
+#
+# A merge that keeps the same version only builds (as a check) and publishes
+# nothing, so bump the version in CMakeLists.txt when you want a new release.
+#
+# The ZIP contains the exe, Qt, MSVC runtime, Tesseract with Czech data,
+# the embeddable Python (with pip, without packages), scripts, models and the
+# database. Python packages and Poppler are downloaded on the user's machine
+# before the first start (Control_GP.exe offers it, or Setup.cmd).
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Two quick merges must not publish the same version twice.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  QT_VERSION: '6.9.3'       # keep in line with the Qt you develop with
+  PYTHON_VERSION: '3.13'    # must match python.version in deps.lock (major.minor)
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version and decide whether to publish
+        id: version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $m = Select-String -Path CMakeLists.txt -Pattern 'project\(\s*Control_GP\s+VERSION\s+([0-9]+(\.[0-9]+)*)'
+          if (-not $m) { throw 'project(Control_GP VERSION x.y.z) not found in CMakeLists.txt' }
+          $tag = "v$($m.Matches[0].Groups[1].Value)"
+          $exists = [bool](git ls-remote --tags origin "refs/tags/$tag")
+          # Publish only on a push to main, never from a pull request or another branch.
+          $publish = ($env:GITHUB_EVENT_NAME -eq 'push') -and ($env:GITHUB_REF -eq 'refs/heads/main') -and (-not $exists)
+          if ($exists) {
+              "::notice::Release $tag already exists. Bump the version in CMakeLists.txt to publish a new one."
+          }
+          $name = if ($publish) { $tag } else { "$tag-dev-$($env:GITHUB_SHA.Substring(0,7))" }
+          "tag=$tag"         >> $env:GITHUB_OUTPUT
+          "name=$name"       >> $env:GITHUB_OUTPUT
+          "publish=$($publish.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          "Version $tag, publish: $publish"
+
+      - name: Set up Python (headers and import library for the build)
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          modules: qtpdf
+          cache: true
+
+      - name: Install Tesseract with Czech language data
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install tesseract -y --no-progress
+          $tess = 'C:\Program Files\Tesseract-OCR'
+          if (-not (Test-Path "$tess\libtesseract-5.dll")) { throw "Tesseract not found in $tess" }
+          Invoke-WebRequest 'https://github.com/tesseract-ocr/tessdata/raw/main/ces.traineddata' `
+            -OutFile "$tess\tessdata\ces.traineddata"
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: pwsh
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCONTROL_GP_DEPLOY=OFF
+          -DPython_ROOT_DIR="$env:pythonLocation"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Assemble application folder
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app  = Join-Path $PWD 'dist\Control_GP'
+          $tess = 'C:\Program Files\Tesseract-OCR'
+          New-Item -ItemType Directory -Force $app | Out-Null
+
+          # Executable and Qt
+          Copy-Item build\Control_GP.exe $app
+          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-compiler-runtime `
+              --no-opengl-sw --no-system-d3d-compiler "$app\Control_GP.exe"
+          if ($LASTEXITCODE -ne 0) { throw "windeployqt failed ($LASTEXITCODE)" }
+
+          # MSVC runtime (app-local, so users need no VC++ redistributable)
+          $crt = Get-ChildItem "$env:VCToolsRedistDir\x64" -Directory -Filter 'Microsoft.VC*.CRT' |
+                 Select-Object -First 1
+          if (-not $crt) { throw "MSVC runtime not found under $env:VCToolsRedistDir" }
+          Copy-Item "$($crt.FullName)\*.dll" $app
+
+          # Tesseract with all its DLLs and the Czech language data
+          Copy-Item "$tess\*.dll" $app
+          New-Item -ItemType Directory -Force "$app\tessdata" | Out-Null
+          Copy-Item "$tess\tessdata\ces.traineddata" "$app\tessdata\"
+
+          # Application data (only ONNX models, the .pt files are not used at runtime)
+          Copy-Item -Recurse scripts, database $app
+          New-Item -ItemType Directory -Force "$app\models", "$app\workspace", "$app\tools", "$app\licenses" | Out-Null
+          Copy-Item models\*.onnx, models\LICENSE "$app\models\"
+          Copy-Item tools\setup_deps.ps1 "$app\tools\"
+          Copy-Item deps.lock, requirements.txt, LICENSE, THIRD_PARTY_LICENSES.md, `
+                    packaging\Setup.cmd, packaging\CTI_ME.txt $app
+
+          # Embeddable Python with pip, without packages (installed on first start)
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$app\tools\setup_deps.ps1" -Only python -SkipPackages
+          if ($LASTEXITCODE -ne 0) { throw "setup_deps.ps1 failed ($LASTEXITCODE)" }
+          # The exe links python313.dll at load time, so it has to sit next to the exe.
+          Copy-Item "$app\python-embed\python3*.dll" $app
+
+          # Licence texts of bundled components
+          Invoke-WebRequest 'https://www.gnu.org/licenses/lgpl-3.0.txt' -OutFile "$app\licenses\LGPL-3.0.txt"
+          Invoke-WebRequest 'https://www.gnu.org/licenses/gpl-3.0.txt'  -OutFile "$app\licenses\GPL-3.0.txt"
+          Invoke-WebRequest 'https://www.apache.org/licenses/LICENSE-2.0.txt' -OutFile "$app\licenses\Apache-2.0.txt"
+          if (Test-Path "$app\python-embed\LICENSE.txt") {
+              Copy-Item "$app\python-embed\LICENSE.txt" "$app\licenses\Python-LICENSE.txt"
+          }
+
+          Get-ChildItem $app | Format-Table Name, Length -AutoSize
+
+      - name: Create ZIP
+        id: zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = "Control_GP-${{ steps.version.outputs.name }}-win64.zip"
+          Push-Location dist
+          7z a -tzip -mx=7 "..\$zip" Control_GP | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "7z failed ($LASTEXITCODE)" }
+          Pop-Location
+          "$((Get-FileHash $zip -Algorithm SHA256).Hash.ToLower())  $zip" |
+              Set-Content "$zip.sha256" -Encoding ascii
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "{0:N1} MB" -f ((Get-Item $zip).Length / 1MB)
+
+      - name: Upload ZIP as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.zip.outputs.zip }}
+          path: |
+            ${{ steps.zip.outputs.zip }}
+            ${{ steps.zip.outputs.zip }}.sha256
+
+      - name: Publish GitHub Release
+        if: steps.version.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Control_GP ${{ steps.version.outputs.tag }}
+          make_latest: true
+          files: |
+            ${{ steps.zip.outputs.zip }}
+            ${{ steps.zip.outputs.zip }}.sha256
+          generate_release_notes: true
+          body: |
+            ## Instalace
+            1. Stáhněte `${{ steps.zip.outputs.zip }}` a rozbalte ho do složky, kam máte právo zápisu (např. Dokumenty), ne do Program Files.
+            2. Spusťte `Control_GP.exe`.
+            3. Při prvním spuštění se aplikace zeptá na stažení Python knihoven (řádově 100 MB) a Poppleru. Poppler lze stáhnout automaticky, nebo ručně z odkazu, který aplikace otevře.
+
+            Požadavky: Windows 10/11 64bit, připojení k internetu při prvním spuštění.

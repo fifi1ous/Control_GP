@@ -77,6 +77,8 @@ add_executable(Control_GP WIN32
     # App (entry point)
     # =========================
     src/app/main.cpp
+    src/app/firstrunsetup.cpp
+    src/app/firstrunsetup.h
 
 
     # =========================

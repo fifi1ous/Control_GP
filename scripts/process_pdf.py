@@ -14,7 +14,10 @@ _APP_DIR = os.path.dirname(_SCRIPT_DIR)
 # Bundled Poppler only — the app never relies on Poppler being on PATH.
 # Running from the source tree works too: tools/setup_deps.ps1 puts poppler/
 # into the repository root, which is the parent of scripts/ there as well.
-POPPLER_BIN = os.path.join(_APP_DIR, "poppler", "Library", "bin")
+# Control_GP.exe passes the folder it found in CONTROL_GP_POPPLER_BIN
+# (the user may also have unzipped a manually downloaded Poppler elsewhere).
+POPPLER_BIN = (os.environ.get("CONTROL_GP_POPPLER_BIN")
+               or os.path.join(_APP_DIR, "poppler", "Library", "bin"))
 
 
 class ProcessPDF:
