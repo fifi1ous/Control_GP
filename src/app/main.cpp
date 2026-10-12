@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "firstrunsetup.h"
 #include "pythonmanager.h"
 
 #include <QApplication>
@@ -14,6 +15,10 @@ int main(int argc, char *argv[])
     // Must come first — PythonManager::bootstrapInterpreter() needs
     // QCoreApplication::applicationDirPath() to locate the bundled Python runtime.
     QApplication a(argc, argv);
+
+    // Released build: download Python packages and Poppler before the first start.
+    if (!FirstRunSetup::ensureDependencies())
+        return 1;
 
     // Bootstrap the embedded Python interpreter with a configuration that points
     // PYTHONHOME at the bundled "python-embed" directory next to the executable.

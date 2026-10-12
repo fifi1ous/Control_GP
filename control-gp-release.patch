@@ -1,0 +1,1264 @@
+From b983ba04f963c0f056e28d9b00528e871cf26a2f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Filip=20Rou=C4=8Dka?= <phill.roucka@gmail.com>
+Date: Mon, 12 Oct 2026 09:59:49 +0200
+Subject: [PATCH 1/2] Add release build and first-run dependency download
+
+- GitHub Actions workflow builds Control_GP on Windows and publishes a
+  ready-to-run ZIP (Qt, MSVC runtime, Tesseract + ces, embeddable Python)
+- On first start the app offers to download Python packages and Poppler
+  via tools/setup_deps.ps1 (also available as Setup.cmd)
+- setup_deps.ps1: -SkipPackages for the release build, release-folder mode
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01T2Sw9vKUHfo2rkXwD2947Y
+---
+ .gitattributes                |   1 +
+ .github/workflows/release.yml | 157 +++++++++++++++++++++++++++++
+ CMakeLists.txt                |   2 +
+ README.md                     |  36 ++++++-
+ packaging/CTI_ME.txt          |  24 +++++
+ packaging/Setup.cmd           |   7 ++
+ src/app/firstrunsetup.cpp     | 183 ++++++++++++++++++++++++++++++++++
+ src/app/firstrunsetup.h       |  20 ++++
+ src/app/main.cpp              |   5 +
+ tools/setup_deps.ps1          |  36 ++++++-
+ 10 files changed, 464 insertions(+), 7 deletions(-)
+ create mode 100644 .github/workflows/release.yml
+ create mode 100644 packaging/CTI_ME.txt
+ create mode 100644 packaging/Setup.cmd
+ create mode 100644 src/app/firstrunsetup.cpp
+ create mode 100644 src/app/firstrunsetup.h
+
+diff --git a/.gitattributes b/.gitattributes
+index fe409ce..f437cd2 100644
+--- a/.gitattributes
++++ b/.gitattributes
+@@ -6,6 +6,7 @@
+ *.h     text eol=crlf
+ *.ui    text eol=crlf
+ *.ps1   text eol=crlf
++*.cmd   text eol=crlf
+ 
+ # Python scripts
+ *.py    text eol=lf
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+new file mode 100644
+index 0000000..3545697
+--- /dev/null
++++ b/.github/workflows/release.yml
+@@ -0,0 +1,157 @@
++# Builds Control_GP on Windows and publishes a ready-to-run ZIP.
++#
++#   git tag v0.1.0 && git push origin v0.1.0   -> GitHub Release with the ZIP
++#   Actions -> Release -> Run workflow          -> test build, ZIP as a workflow artifact
++#
++# The ZIP contains the exe, Qt, MSVC runtime, Tesseract with Czech data,
++# the embeddable Python (with pip, without packages), scripts, models and the
++# database. Python packages and Poppler are downloaded on the user's machine
++# before the first start (Control_GP.exe offers it, or Setup.cmd).
++
++name: Release
++
++on:
++  push:
++    tags: ['v*']
++  workflow_dispatch:
++
++permissions:
++  contents: write
++
++env:
++  QT_VERSION: '6.8.3'       # keep in line with the Qt you develop with
++  PYTHON_VERSION: '3.13'    # must match python.version in deps.lock (major.minor)
++
++jobs:
++  build:
++    runs-on: windows-2025
++    steps:
++      - uses: actions/checkout@v4
++
++      - name: Set up Python (headers and import library for the build)
++        uses: actions/setup-python@v5
++        with:
++          python-version: ${{ env.PYTHON_VERSION }}
++
++      - name: Install Qt
++        uses: jurplel/install-qt-action@v4
++        with:
++          version: ${{ env.QT_VERSION }}
++          arch: win64_msvc2022_64
++          modules: qtpdf
++          cache: true
++
++      - name: Install Tesseract with Czech language data
++        shell: pwsh
++        run: |
++          $ErrorActionPreference = 'Stop'
++          choco install tesseract -y --no-progress
++          $tess = 'C:\Program Files\Tesseract-OCR'
++          if (-not (Test-Path "$tess\libtesseract-5.dll")) { throw "Tesseract not found in $tess" }
++          Invoke-WebRequest 'https://github.com/tesseract-ocr/tessdata/raw/main/ces.traineddata' `
++            -OutFile "$tess\tessdata\ces.traineddata"
++
++      - name: Set up MSVC
++        uses: ilammy/msvc-dev-cmd@v1
++        with:
++          arch: x64
++
++      - name: Configure
++        shell: pwsh
++        run: >
++          cmake -B build -G Ninja
++          -DCMAKE_BUILD_TYPE=Release
++          -DCONTROL_GP_DEPLOY=OFF
++          -DPython_ROOT_DIR="$env:pythonLocation"
++
++      - name: Build
++        run: cmake --build build
++
++      - name: Assemble application folder
++        shell: pwsh
++        run: |
++          $ErrorActionPreference = 'Stop'
++          $app  = Join-Path $PWD 'dist\Control_GP'
++          $tess = 'C:\Program Files\Tesseract-OCR'
++          New-Item -ItemType Directory -Force $app | Out-Null
++
++          # Executable and Qt
++          Copy-Item build\Control_GP.exe $app
++          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --no-compiler-runtime `
++              --no-opengl-sw --no-system-d3d-compiler "$app\Control_GP.exe"
++          if ($LASTEXITCODE -ne 0) { throw "windeployqt failed ($LASTEXITCODE)" }
++
++          # MSVC runtime (app-local, so users need no VC++ redistributable)
++          $crt = Get-ChildItem "$env:VCToolsRedistDir\x64" -Directory -Filter 'Microsoft.VC*.CRT' |
++                 Select-Object -First 1
++          if (-not $crt) { throw "MSVC runtime not found under $env:VCToolsRedistDir" }
++          Copy-Item "$($crt.FullName)\*.dll" $app
++
++          # Tesseract with all its DLLs and the Czech language data
++          Copy-Item "$tess\*.dll" $app
++          New-Item -ItemType Directory -Force "$app\tessdata" | Out-Null
++          Copy-Item "$tess\tessdata\ces.traineddata" "$app\tessdata\"
++
++          # Application data (only ONNX models, the .pt files are not used at runtime)
++          Copy-Item -Recurse scripts, database $app
++          New-Item -ItemType Directory -Force "$app\models", "$app\workspace", "$app\tools", "$app\licenses" | Out-Null
++          Copy-Item models\*.onnx, models\LICENSE "$app\models\"
++          Copy-Item tools\setup_deps.ps1 "$app\tools\"
++          Copy-Item deps.lock, requirements.txt, LICENSE, THIRD_PARTY_LICENSES.md, `
++                    packaging\Setup.cmd, packaging\CTI_ME.txt $app
++
++          # Embeddable Python with pip, without packages (installed on first start)
++          powershell -NoProfile -ExecutionPolicy Bypass -File "$app\tools\setup_deps.ps1" -Only python -SkipPackages
++          if ($LASTEXITCODE -ne 0) { throw "setup_deps.ps1 failed ($LASTEXITCODE)" }
++          # The exe links python313.dll at load time, so it has to sit next to the exe.
++          Copy-Item "$app\python-embed\python3*.dll" $app
++
++          # Licence texts of bundled components
++          Invoke-WebRequest 'https://www.gnu.org/licenses/lgpl-3.0.txt' -OutFile "$app\licenses\LGPL-3.0.txt"
++          Invoke-WebRequest 'https://www.gnu.org/licenses/gpl-3.0.txt'  -OutFile "$app\licenses\GPL-3.0.txt"
++          Invoke-WebRequest 'https://www.apache.org/licenses/LICENSE-2.0.txt' -OutFile "$app\licenses\Apache-2.0.txt"
++          if (Test-Path "$app\python-embed\LICENSE.txt") {
++              Copy-Item "$app\python-embed\LICENSE.txt" "$app\licenses\Python-LICENSE.txt"
++          }
++
++          Get-ChildItem $app | Format-Table Name, Length -AutoSize
++
++      - name: Create ZIP
++        id: zip
++        shell: pwsh
++        run: |
++          $ErrorActionPreference = 'Stop'
++          $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { "dev-$($env:GITHUB_SHA.Substring(0,7))" }
++          $zip = "Control_GP-$ver-win64.zip"
++          Push-Location dist
++          7z a -tzip -mx=7 "..\$zip" Control_GP | Out-Null
++          if ($LASTEXITCODE -ne 0) { throw "7z failed ($LASTEXITCODE)" }
++          Pop-Location
++          "$((Get-FileHash $zip -Algorithm SHA256).Hash.ToLower())  $zip" |
++              Set-Content "$zip.sha256" -Encoding ascii
++          "zip=$zip" >> $env:GITHUB_OUTPUT
++          "{0:N1} MB" -f ((Get-Item $zip).Length / 1MB)
++
++      - name: Upload ZIP as workflow artifact
++        uses: actions/upload-artifact@v4
++        with:
++          name: ${{ steps.zip.outputs.zip }}
++          path: |
++            ${{ steps.zip.outputs.zip }}
++            ${{ steps.zip.outputs.zip }}.sha256
++
++      - name: Publish GitHub Release
++        if: github.ref_type == 'tag'
++        uses: softprops/action-gh-release@v2
++        with:
++          files: |
++            ${{ steps.zip.outputs.zip }}
++            ${{ steps.zip.outputs.zip }}.sha256
++          generate_release_notes: true
++          body: |
++            ## Instalace
++            1. Stáhněte `${{ steps.zip.outputs.zip }}` a rozbalte ho do složky, kam máte právo zápisu (např. Dokumenty), ne do Program Files.
++            2. Spusťte `Control_GP.exe`.
++            3. Při prvním spuštění aplikace nabídne stažení Python knihoven a Poppleru (řádově 100 MB, jen jednou).
++
++            Požadavky: Windows 10/11 64bit, připojení k internetu při prvním spuštění.
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 575ba35..c3ac5e8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -77,6 +77,8 @@ add_executable(Control_GP WIN32
+     # App (entry point)
+     # =========================
+     src/app/main.cpp
++    src/app/firstrunsetup.cpp
++    src/app/firstrunsetup.h
+ 
+ 
+     # =========================
+diff --git a/README.md b/README.md
+index c5d81ed..09366b8 100644
+--- a/README.md
++++ b/README.md
+@@ -8,7 +8,23 @@ Aplikace načte PDF dokumenty a VFK, klasifikuje a segmentuje stránky pomocí m
+ YOLO (ONNX, onnxruntime), čte text přes OCR (Tesseract) a porovná vytěžené údaje
+ s VFK. Výsledky zobrazí v prohlížeči PDF se zvýrazněnými oblastmi.
+ 
+-## Požadavky
++## Stažení a spuštění
++
++Hotovou aplikaci pro Windows stáhnete v sekci
++[Releases](https://github.com/fifi1ous/Control_GP/releases) jako
++`Control_GP-<verze>-win64.zip`.
++
++1. Rozbalte ZIP do složky, kam máte právo zápisu (např. Dokumenty), ne do Program Files.
++2. Spusťte `Control_GP.exe`.
++3. Při prvním spuštění aplikace nabídne stažení Python knihoven a Poppleru
++   (řádově 100 MB, jen jednou). Pokud to selže, spusťte `Setup.cmd` a sledujte výpis.
++
++Nic dalšího instalovat nemusíte: Qt, Tesseract s češtinou, runtime MSVC
++i embeddable Python jsou v ZIPu.
++
++## Sestavení ze zdrojových kódů
++
++### Požadavky
+ 
+ - Windows 10/11 x64
+ - Visual Studio 2022 (MSVC, C++17)
+@@ -18,7 +34,7 @@ s VFK. Výsledky zobrazí v prohlížeči PDF se zvýrazněnými oblastmi.
+ - Tesseract 5 (build UB Mannheim) s `ces.traineddata`, výchozí cesta
+   `C:\Program Files\Tesseract-OCR`
+ 
+-## Sestavení
++### Postup
+ 
+ 1. **Stáhněte závislosti** (embeddable Python s balíčky z `requirements.txt` a Poppler):
+ 
+@@ -46,6 +62,20 @@ s VFK. Výsledky zobrazí v prohlížeči PDF se zvýrazněnými oblastmi.
+    Tesseractu, `tessdata/ces.traineddata`, `python-embed/`, `poppler/`, `scripts/`, `models/`, `database/`
+    a `workspace/`. Kopírování lze vypnout volbou `-DCONTROL_GP_DEPLOY=OFF`.
+ 
++## Vydání nové verze
++
++Release sestavuje GitHub Actions (`.github/workflows/release.yml`). Stačí zvýšit
++verzi v `CMakeLists.txt` (`project(Control_GP VERSION ...)`) a pushnout tag:
++
++```powershell
++git tag v0.1.0
++git push origin v0.1.0
++```
++
++Workflow aplikaci sestaví, přibalí Qt, Tesseract, runtime MSVC a embeddable Python
++a ZIP nahraje do nového release. Zkušební build bez vydání spustíte v záložce
++*Actions → Release → Run workflow*; ZIP je pak ke stažení jako artefakt běhu.
++
+ ## Struktura repozitáře
+ 
+ ```
+@@ -56,6 +86,8 @@ models/                 modely YOLO exportované do ONNX
+ database/               SQLite databáze (katastrální území, ÚOZI)
+ third_party/tesseract/  hlavička C API a .def pro generování import knihovny
+ tools/setup_deps.ps1    stažení závislostí podle deps.lock
++packaging/              soubory přibalené k release (Setup.cmd, CTI_ME.txt)
++.github/workflows/      sestavení a vydání release
+ workspace/              pracovní složka aplikace (obsah se neverzuje)
+ deps.lock               verze, URL a SHA256 stahovaných závislostí
+ requirements.txt        Python balíčky pro python-embed
+diff --git a/packaging/CTI_ME.txt b/packaging/CTI_ME.txt
+new file mode 100644
+index 0000000..e0df8e0
+--- /dev/null
++++ b/packaging/CTI_ME.txt
+@@ -0,0 +1,24 @@
++Control_GP
++==========
++
++Kontrola geometrických plánů, ZPMZ a žádostí proti datům VFK.
++
++SPUŠTĚNÍ
++1. Rozbalte celý ZIP do složky, kam máte právo zápisu
++   (například Dokumenty\Control_GP). Nerozbalujte do Program Files.
++2. Spusťte Control_GP.exe.
++3. Při prvním spuštění aplikace nabídne stažení Python knihoven a Poppleru
++   (řádově 100 MB, je potřeba připojení k internetu). Stahuje se jen jednou.
++
++Pokud první příprava selže, spusťte Setup.cmd a sledujte výpis.
++
++POŽADAVKY
++- Windows 10 nebo 11, 64bit
++- připojení k internetu při prvním spuštění
++
++LICENCE
++- Kód aplikace: MIT (soubor LICENSE)
++- Modely ve složce models: AGPL-3.0 (models\LICENSE)
++- Komponenty třetích stran: THIRD_PARTY_LICENSES.md a složka licenses
++
++Zdrojové kódy: https://github.com/fifi1ous/Control_GP
+diff --git a/packaging/Setup.cmd b/packaging/Setup.cmd
+new file mode 100644
+index 0000000..fc3640f
+--- /dev/null
++++ b/packaging/Setup.cmd
+@@ -0,0 +1,7 @@
++@echo off
++rem Downloads the Python packages and Poppler needed by Control_GP.
++rem Control_GP.exe offers this automatically on the first start; run this
++rem file manually only if that failed or to repair the installation.
++powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\setup_deps.ps1" %*
++echo.
++pause
+diff --git a/src/app/firstrunsetup.cpp b/src/app/firstrunsetup.cpp
+new file mode 100644
+index 0000000..349d368
+--- /dev/null
++++ b/src/app/firstrunsetup.cpp
+@@ -0,0 +1,183 @@
++#include "firstrunsetup.h"
++
++#include <QCoreApplication>
++#include <QCryptographicHash>
++#include <QDialog>
++#include <QDialogButtonBox>
++#include <QDir>
++#include <QFile>
++#include <QFileInfo>
++#include <QFontDatabase>
++#include <QJsonDocument>
++#include <QJsonObject>
++#include <QLabel>
++#include <QMessageBox>
++#include <QPlainTextEdit>
++#include <QProcess>
++#include <QProgressBar>
++#include <QPushButton>
++#include <QTemporaryFile>
++#include <QVBoxLayout>
++
++namespace {
++
++QDir appDir()
++{
++    return QDir(QCoreApplication::applicationDirPath());
++}
++
++QString setupScriptPath()
++{
++    return appDir().filePath("tools/setup_deps.ps1");
++}
++
++// setup_deps.ps1 writes python-embed/.installed.json with the SHA256 of
++// requirements.txt it installed. PowerShell 5.1 may add a UTF-8 BOM.
++bool pythonPackagesReady()
++{
++    QFile req(appDir().filePath("requirements.txt"));
++    if (!req.open(QIODevice::ReadOnly))
++        return false;
++    const QByteArray expected =
++        QCryptographicHash::hash(req.readAll(), QCryptographicHash::Sha256).toHex().toUpper();
++
++    QFile stamp(appDir().filePath("python-embed/.installed.json"));
++    if (!stamp.open(QIODevice::ReadOnly))
++        return false;
++    QByteArray data = stamp.readAll();
++    if (data.startsWith("\xEF\xBB\xBF"))
++        data.remove(0, 3);
++
++    const QJsonObject obj = QJsonDocument::fromJson(data).object();
++    return obj.value("requirements").toString().toLatin1().toUpper() == expected;
++}
++
++bool popplerReady()
++{
++    return QFileInfo::exists(appDir().filePath("poppler/Library/bin/pdftoppm.exe"));
++}
++
++bool dependenciesReady()
++{
++    return pythonPackagesReady() && popplerReady();
++}
++
++bool appDirWritable()
++{
++    QTemporaryFile probe(appDir().filePath("write-test-XXXXXX.tmp"));
++    return probe.open();
++}
++
++// Runs setup_deps.ps1 in a modal dialog that shows its output.
++// Returns true when the script finished with exit code 0.
++bool runSetupScript()
++{
++    QDialog dlg;
++    dlg.setWindowTitle(QStringLiteral("Control_GP – příprava prvního spuštění"));
++    dlg.resize(760, 460);
++
++    auto *layout = new QVBoxLayout(&dlg);
++    auto *info = new QLabel(QStringLiteral(
++        "Stahuji Python knihovny a Poppler. Podle rychlosti připojení to může trvat několik minut."));
++    info->setWordWrap(true);
++    auto *progress = new QProgressBar;
++    progress->setRange(0, 0);  // indeterminate while the script runs
++    auto *log = new QPlainTextEdit;
++    log->setReadOnly(true);
++    log->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
++    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
++    buttons->button(QDialogButtonBox::Close)->setEnabled(false);
++
++    layout->addWidget(info);
++    layout->addWidget(progress);
++    layout->addWidget(log, 1);
++    layout->addWidget(buttons);
++    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
++
++    QProcess proc;
++    proc.setProcessChannelMode(QProcess::MergedChannels);
++    proc.setWorkingDirectory(appDir().absolutePath());
++
++    bool ok = false;
++
++    QObject::connect(&proc, &QProcess::readyReadStandardOutput, &dlg, [&]() {
++        const QString text = QString::fromLocal8Bit(proc.readAllStandardOutput());
++        log->appendPlainText(text.trimmed());
++    });
++
++    QObject::connect(&proc, &QProcess::finished, &dlg,
++                     [&](int exitCode, QProcess::ExitStatus status) {
++        ok = (status == QProcess::NormalExit && exitCode == 0);
++        progress->setRange(0, 1);
++        progress->setValue(ok ? 1 : 0);
++        info->setText(ok
++            ? QStringLiteral("Hotovo. Po zavření okna se aplikace spustí.")
++            : QStringLiteral("Stažení se nepodařilo. Výpis výše ukazuje, kde nastala chyba. "
++                             "Zkontrolujte připojení k internetu a spusťte aplikaci znovu, "
++                             "případně spusťte Setup.cmd."));
++        buttons->button(QDialogButtonBox::Close)->setEnabled(true);
++    });
++
++    QObject::connect(&proc, &QProcess::errorOccurred, &dlg, [&](QProcess::ProcessError err) {
++        if (err != QProcess::FailedToStart)
++            return;
++        info->setText(QStringLiteral("Nepodařilo se spustit PowerShell. Spusťte prosím Setup.cmd ručně."));
++        progress->setRange(0, 1);
++        progress->setValue(0);
++        buttons->button(QDialogButtonBox::Close)->setEnabled(true);
++    });
++
++    proc.start(QStringLiteral("powershell.exe"),
++               { QStringLiteral("-NoProfile"),
++                 QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
++                 QStringLiteral("-File"), QDir::toNativeSeparators(setupScriptPath()) });
++
++    dlg.exec();
++
++    // Closed while still running (window close button): stop the script.
++    if (proc.state() != QProcess::NotRunning) {
++        proc.kill();
++        proc.waitForFinished(5000);
++        return false;
++    }
++    return ok;
++}
++
++} // namespace
++
++bool FirstRunSetup::ensureDependencies()
++{
++    // Developer build: dependencies are synced next to the exe by CMake.
++    if (!QFileInfo::exists(setupScriptPath()))
++        return true;
++
++    if (dependenciesReady())
++        return true;
++
++    if (!appDirWritable()) {
++        QMessageBox::critical(nullptr, QStringLiteral("Control_GP"),
++            QStringLiteral("Do složky aplikace nelze zapisovat:\n%1\n\n"
++                           "Rozbalte Control_GP do složky, kam máte právo zápisu, "
++                           "například do Dokumentů, a spusťte ho znovu.")
++                .arg(QDir::toNativeSeparators(appDir().absolutePath())));
++        return false;
++    }
++
++    const auto answer = QMessageBox::question(nullptr, QStringLiteral("Control_GP"),
++        QStringLiteral("Před prvním použitím je potřeba stáhnout Python knihovny a Poppler "
++                       "(řádově 100 MB). Stažení proběhne jen jednou.\n\nStáhnout nyní?"),
++        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
++    if (answer != QMessageBox::Yes)
++        return false;
++
++    if (!runSetupScript())
++        return false;
++
++    if (!dependenciesReady()) {
++        QMessageBox::critical(nullptr, QStringLiteral("Control_GP"),
++            QStringLiteral("Závislosti se nepodařilo připravit. Spusťte prosím Setup.cmd "
++                           "ve složce aplikace a sledujte výpis."));
++        return false;
++    }
++    return true;
++}
+diff --git a/src/app/firstrunsetup.h b/src/app/firstrunsetup.h
+new file mode 100644
+index 0000000..f59a776
+--- /dev/null
++++ b/src/app/firstrunsetup.h
+@@ -0,0 +1,20 @@
++#ifndef FIRSTRUNSETUP_H
++#define FIRSTRUNSETUP_H
++
++// First-run preparation of a released build.
++//
++// The release ZIP ships Control_GP.exe with the embeddable Python (without
++// packages), but not the Python packages from requirements.txt nor Poppler.
++// Before the interpreter starts, ensureDependencies() checks that both are in
++// place and, if not, offers to run tools/setup_deps.ps1, showing its output.
++//
++// In a developer build (no tools/setup_deps.ps1 next to the exe) the check is
++// skipped, because the dependencies are synced there by CMake.
++namespace FirstRunSetup
++{
++    // Returns true when the application can start. Must be called after
++    // QApplication is constructed and before PythonManager::bootstrapInterpreter().
++    bool ensureDependencies();
++}
++
++#endif // FIRSTRUNSETUP_H
+diff --git a/src/app/main.cpp b/src/app/main.cpp
+index f3fccaa..bf5f51a 100644
+--- a/src/app/main.cpp
++++ b/src/app/main.cpp
+@@ -1,4 +1,5 @@
+ #include "mainwindow.h"
++#include "firstrunsetup.h"
+ #include "pythonmanager.h"
+ 
+ #include <QApplication>
+@@ -15,6 +16,10 @@ int main(int argc, char *argv[])
+     // QCoreApplication::applicationDirPath() to locate the bundled Python runtime.
+     QApplication a(argc, argv);
+ 
++    // Released build: download Python packages and Poppler before the first start.
++    if (!FirstRunSetup::ensureDependencies())
++        return 1;
++
+     // Bootstrap the embedded Python interpreter with a configuration that points
+     // PYTHONHOME at the bundled "python-embed" directory next to the executable.
+     // This makes the app portable — no system Python required on the target machine.
+diff --git a/tools/setup_deps.ps1 b/tools/setup_deps.ps1
+index b0e8f42..0937a1f 100644
+--- a/tools/setup_deps.ps1
++++ b/tools/setup_deps.ps1
+@@ -3,7 +3,8 @@
+     Downloads and prepares the runtime dependencies of Control_GP.
+ 
+ .DESCRIPTION
+-    Reads deps.lock and requirements.txt from the repository root and fills:
++    Reads deps.lock and requirements.txt from the repository root (or, in a
++    released build, from the application folder next to Control_GP.exe) and fills:
+         python-embed/   embeddable Python + packages from requirements.txt
+         poppler/        Poppler binaries (used by pdf2image)
+ 
+@@ -18,8 +19,14 @@
+ .PARAMETER Only
+     Limit the run to some components: python, poppler.
+ 
++.PARAMETER SkipPackages
++    Install only the embeddable Python and pip, without the packages from
++    requirements.txt. Used by the release build; the packages are installed
++    on the user's machine before the first start.
++
+ .PARAMETER TesseractDir
+     Tesseract installation to check (not installed by this script).
++    The check is skipped in a released build, which bundles Tesseract.
+ 
+ .EXAMPLE
+     powershell -ExecutionPolicy Bypass -File tools\setup_deps.ps1
+@@ -32,6 +39,7 @@ param(
+     [switch]$Force,
+     [ValidateSet('python', 'poppler')]
+     [string[]]$Only,
++    [switch]$SkipPackages,
+     [string]$TesseractDir = 'C:\Program Files\Tesseract-OCR'
+ )
+ 
+@@ -46,6 +54,9 @@ $LockFile = Join-Path $RepoRoot 'deps.lock'
+ $ReqFile  = Join-Path $RepoRoot 'requirements.txt'
+ $CacheDir = Join-Path $RepoRoot '.deps-cache'
+ 
++# A released build has Control_GP.exe in the same folder as deps.lock.
++$IsAppDir = Test-Path -LiteralPath (Join-Path $RepoRoot 'Control_GP.exe')
++
+ # Modules imported as a smoke test after pip install (import names, not package names)
+ $SmokeImports = @('pypdf', 'pdf2image', 'PIL', 'onnxruntime', 'cv2', 'numpy', 'requests')
+ 
+@@ -188,6 +199,13 @@ function Install-Python {
+         Invoke-Checked $pyExe @($getPip, '--no-warn-script-location')
+     }
+ 
++    if ($SkipPackages) {
++        # Empty requirements hash: the packages get installed on the next normal run.
++        Write-Stamp $dest @{ version = $version; requirements = '' }
++        Write-Ok "Python $version base ready in python-embed\ (packages skipped)"
++        return
++    }
++
+     Write-Info 'Installing packages from requirements.txt'
+     Invoke-Checked $pyExe @('-m', 'pip', 'install', '--no-warn-script-location',
+                             '--disable-pip-version-check', '-r', $ReqFile)
+@@ -287,8 +305,16 @@ foreach ($c in $components) {
+     }
+ }
+ 
+-Test-Tesseract
+-Test-BuildPython
+-
+ Write-Host ''
+-Write-Host 'Done. You can now configure and build Control_GP with CMake / Qt Creator.' -ForegroundColor Green
++if ($IsAppDir) {
++    # Released build: Tesseract is bundled and nothing is compiled, so skip the
++    # developer checks and drop the download cache to save disk space.
++    if (Test-Path -LiteralPath $CacheDir) { Remove-Item -LiteralPath $CacheDir -Recurse -Force }
++    Write-Host 'Done. Control_GP is ready to run.' -ForegroundColor Green
++}
++else {
++    Test-Tesseract
++    Test-BuildPython
++    Write-Host ''
++    Write-Host 'Done. You can now configure and build Control_GP with CMake / Qt Creator.' -ForegroundColor Green
++}
+-- 
+2.43.0
+
+
+From 721892f757384ab7da3792ffff31036ea1b0c13e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Filip=20Rou=C4=8Dka?= <phill.roucka@gmail.com>
+Date: Mon, 12 Oct 2026 10:58:49 +0200
+Subject: [PATCH 2/2] Release on merge to main, separate Python and Poppler
+ checks
+
+- Release workflow runs on pushes to main and publishes vX.Y.Z from
+  CMakeLists.txt when that release does not exist yet
+- On start the app checks Python packages and Poppler separately; Poppler
+  can be downloaded automatically or manually from the browser
+- Python scripts take the Poppler folder from CONTROL_GP_POPPLER_BIN
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01T2Sw9vKUHfo2rkXwD2947Y
+---
+ .github/workflows/release.yml |  50 ++++++-
+ README.md                     |  26 ++--
+ packaging/CTI_ME.txt          |   7 +-
+ scripts/process_pdf.py        |   5 +-
+ src/app/firstrunsetup.cpp     | 266 +++++++++++++++++++++++++++-------
+ src/app/firstrunsetup.h       |  23 +--
+ 6 files changed, 297 insertions(+), 80 deletions(-)
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 3545697..e824297 100644
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -1,7 +1,12 @@
+ # Builds Control_GP on Windows and publishes a ready-to-run ZIP.
+ #
+-#   git tag v0.1.0 && git push origin v0.1.0   -> GitHub Release with the ZIP
+-#   Actions -> Release -> Run workflow          -> test build, ZIP as a workflow artifact
++#   merge / push to main  -> build; if the version in CMakeLists.txt
++#                            (project(Control_GP VERSION x.y.z)) has no release
++#                            yet, a GitHub Release vx.y.z is created with the ZIP
++#   Actions -> Release -> Run workflow -> test build, ZIP as a workflow artifact
++#
++# A merge that keeps the same version only builds (as a check) and publishes
++# nothing, so bump the version in CMakeLists.txt when you want a new release.
+ #
+ # The ZIP contains the exe, Qt, MSVC runtime, Tesseract with Czech data,
+ # the embeddable Python (with pip, without packages), scripts, models and the
+@@ -12,12 +17,21 @@ name: Release
+ 
+ on:
+   push:
+-    tags: ['v*']
++    branches: [main]
++    paths-ignore:
++      - '**/*.md'
++      - 'LICENSE'
++      - '.gitignore'
+   workflow_dispatch:
+ 
+ permissions:
+   contents: write
+ 
++# Two quick merges must not publish the same version twice.
++concurrency:
++  group: release-${{ github.ref }}
++  cancel-in-progress: false
++
+ env:
+   QT_VERSION: '6.8.3'       # keep in line with the Qt you develop with
+   PYTHON_VERSION: '3.13'    # must match python.version in deps.lock (major.minor)
+@@ -28,6 +42,25 @@ jobs:
+     steps:
+       - uses: actions/checkout@v4
+ 
++      - name: Read version and decide whether to publish
++        id: version
++        shell: pwsh
++        run: |
++          $ErrorActionPreference = 'Stop'
++          $m = Select-String -Path CMakeLists.txt -Pattern 'project\(\s*Control_GP\s+VERSION\s+([0-9]+(\.[0-9]+)*)'
++          if (-not $m) { throw 'project(Control_GP VERSION x.y.z) not found in CMakeLists.txt' }
++          $tag = "v$($m.Matches[0].Groups[1].Value)"
++          $exists = [bool](git ls-remote --tags origin "refs/tags/$tag")
++          $publish = ($env:GITHUB_EVENT_NAME -eq 'push') -and (-not $exists)
++          if ($exists) {
++              "::notice::Release $tag already exists. Bump the version in CMakeLists.txt to publish a new one."
++          }
++          $name = if ($publish) { $tag } else { "$tag-dev-$($env:GITHUB_SHA.Substring(0,7))" }
++          "tag=$tag"         >> $env:GITHUB_OUTPUT
++          "name=$name"       >> $env:GITHUB_OUTPUT
++          "publish=$($publish.ToString().ToLower())" >> $env:GITHUB_OUTPUT
++          "Version $tag, publish: $publish"
++
+       - name: Set up Python (headers and import library for the build)
+         uses: actions/setup-python@v5
+         with:
+@@ -121,8 +154,7 @@ jobs:
+         shell: pwsh
+         run: |
+           $ErrorActionPreference = 'Stop'
+-          $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { "dev-$($env:GITHUB_SHA.Substring(0,7))" }
+-          $zip = "Control_GP-$ver-win64.zip"
++          $zip = "Control_GP-${{ steps.version.outputs.name }}-win64.zip"
+           Push-Location dist
+           7z a -tzip -mx=7 "..\$zip" Control_GP | Out-Null
+           if ($LASTEXITCODE -ne 0) { throw "7z failed ($LASTEXITCODE)" }
+@@ -141,9 +173,13 @@ jobs:
+             ${{ steps.zip.outputs.zip }}.sha256
+ 
+       - name: Publish GitHub Release
+-        if: github.ref_type == 'tag'
++        if: steps.version.outputs.publish == 'true'
+         uses: softprops/action-gh-release@v2
+         with:
++          tag_name: ${{ steps.version.outputs.tag }}
++          target_commitish: ${{ github.sha }}
++          name: Control_GP ${{ steps.version.outputs.tag }}
++          make_latest: true
+           files: |
+             ${{ steps.zip.outputs.zip }}
+             ${{ steps.zip.outputs.zip }}.sha256
+@@ -152,6 +188,6 @@ jobs:
+             ## Instalace
+             1. Stáhněte `${{ steps.zip.outputs.zip }}` a rozbalte ho do složky, kam máte právo zápisu (např. Dokumenty), ne do Program Files.
+             2. Spusťte `Control_GP.exe`.
+-            3. Při prvním spuštění aplikace nabídne stažení Python knihoven a Poppleru (řádově 100 MB, jen jednou).
++            3. Při prvním spuštění se aplikace zeptá na stažení Python knihoven (řádově 100 MB) a Poppleru. Poppler lze stáhnout automaticky, nebo ručně z odkazu, který aplikace otevře.
+ 
+             Požadavky: Windows 10/11 64bit, připojení k internetu při prvním spuštění.
+diff --git a/README.md b/README.md
+index 09366b8..1eb4882 100644
+--- a/README.md
++++ b/README.md
+@@ -16,8 +16,12 @@ Hotovou aplikaci pro Windows stáhnete v sekci
+ 
+ 1. Rozbalte ZIP do složky, kam máte právo zápisu (např. Dokumenty), ne do Program Files.
+ 2. Spusťte `Control_GP.exe`.
+-3. Při prvním spuštění aplikace nabídne stažení Python knihoven a Poppleru
+-   (řádově 100 MB, jen jednou). Pokud to selže, spusťte `Setup.cmd` a sledujte výpis.
++3. Při prvním spuštění aplikace zkontroluje, zda jsou stažené Python knihovny a Poppler:
++   - **Python knihovny** (řádově 100 MB) po potvrzení stáhne sama.
++   - **Poppler** stáhne automaticky, nebo otevře odkaz v prohlížeči a ZIP rozbalíte
++     do složky aplikace sami.
++
++   Stahuje se jen jednou. Pokud to selže, spusťte `Setup.cmd` a sledujte výpis.
+ 
+ Nic dalšího instalovat nemusíte: Qt, Tesseract s češtinou, runtime MSVC
+ i embeddable Python jsou v ZIPu.
+@@ -64,17 +68,17 @@ i embeddable Python jsou v ZIPu.
+ 
+ ## Vydání nové verze
+ 
+-Release sestavuje GitHub Actions (`.github/workflows/release.yml`). Stačí zvýšit
+-verzi v `CMakeLists.txt` (`project(Control_GP VERSION ...)`) a pushnout tag:
++Release vytváří GitHub Actions (`.github/workflows/release.yml`) automaticky po
++každém merge do větve `main`:
+ 
+-```powershell
+-git tag v0.1.0
+-git push origin v0.1.0
+-```
++1. Zvyšte verzi v `CMakeLists.txt`, např. `project(Control_GP VERSION 0.2.0 LANGUAGES CXX)`.
++2. Mergněte změny do `main`.
++3. Workflow aplikaci sestaví a vytvoří release `v0.2.0` se ZIPem.
+ 
+-Workflow aplikaci sestaví, přibalí Qt, Tesseract, runtime MSVC a embeddable Python
+-a ZIP nahraje do nového release. Zkušební build bez vydání spustíte v záložce
+-*Actions → Release → Run workflow*; ZIP je pak ke stažení jako artefakt běhu.
++Pokud verze v `CMakeLists.txt` už release má, workflow aplikaci jen sestaví jako
++kontrolu a nic nevydá. Merge, který mění jen dokumentaci (`*.md`), build nespouští.
++Zkušební build bez vydání spustíte v záložce *Actions → Release → Run workflow*;
++ZIP je pak ke stažení jako artefakt běhu.
+ 
+ ## Struktura repozitáře
+ 
+diff --git a/packaging/CTI_ME.txt b/packaging/CTI_ME.txt
+index e0df8e0..7a46b2c 100644
+--- a/packaging/CTI_ME.txt
++++ b/packaging/CTI_ME.txt
+@@ -7,8 +7,11 @@ SPUŠTĚNÍ
+ 1. Rozbalte celý ZIP do složky, kam máte právo zápisu
+    (například Dokumenty\Control_GP). Nerozbalujte do Program Files.
+ 2. Spusťte Control_GP.exe.
+-3. Při prvním spuštění aplikace nabídne stažení Python knihoven a Poppleru
+-   (řádově 100 MB, je potřeba připojení k internetu). Stahuje se jen jednou.
++3. Při prvním spuštění se aplikace zeptá na stažení:
++   - Python knihoven (řádově 100 MB), které stáhne sama,
++   - Poppleru, který stáhne automaticky, nebo otevře odkaz v prohlížeči
++     a ZIP rozbalíte do složky aplikace sami.
++   Je potřeba připojení k internetu. Stahuje se jen jednou.
+ 
+ Pokud první příprava selže, spusťte Setup.cmd a sledujte výpis.
+ 
+diff --git a/scripts/process_pdf.py b/scripts/process_pdf.py
+index 7d43212..2990ddc 100644
+--- a/scripts/process_pdf.py
++++ b/scripts/process_pdf.py
+@@ -14,7 +14,10 @@ _APP_DIR = os.path.dirname(_SCRIPT_DIR)
+ # Bundled Poppler only — the app never relies on Poppler being on PATH.
+ # Running from the source tree works too: tools/setup_deps.ps1 puts poppler/
+ # into the repository root, which is the parent of scripts/ there as well.
+-POPPLER_BIN = os.path.join(_APP_DIR, "poppler", "Library", "bin")
++# Control_GP.exe passes the folder it found in CONTROL_GP_POPPLER_BIN
++# (the user may also have unzipped a manually downloaded Poppler elsewhere).
++POPPLER_BIN = (os.environ.get("CONTROL_GP_POPPLER_BIN")
++               or os.path.join(_APP_DIR, "poppler", "Library", "bin"))
+ 
+ 
+ class ProcessPDF:
+diff --git a/src/app/firstrunsetup.cpp b/src/app/firstrunsetup.cpp
+index 349d368..570ad25 100644
+--- a/src/app/firstrunsetup.cpp
++++ b/src/app/firstrunsetup.cpp
+@@ -2,9 +2,11 @@
+ 
+ #include <QCoreApplication>
+ #include <QCryptographicHash>
++#include <QDesktopServices>
+ #include <QDialog>
+ #include <QDialogButtonBox>
+ #include <QDir>
++#include <QDirIterator>
+ #include <QFile>
+ #include <QFileInfo>
+ #include <QFontDatabase>
+@@ -17,10 +19,13 @@
+ #include <QProgressBar>
+ #include <QPushButton>
+ #include <QTemporaryFile>
++#include <QUrl>
+ #include <QVBoxLayout>
+ 
+ namespace {
+ 
++const char *kTitle = "Control_GP";
++
+ QDir appDir()
+ {
+     return QDir(QCoreApplication::applicationDirPath());
+@@ -31,8 +36,29 @@ QString setupScriptPath()
+     return appDir().filePath("tools/setup_deps.ps1");
+ }
+ 
+-// setup_deps.ps1 writes python-embed/.installed.json with the SHA256 of
+-// requirements.txt it installed. PowerShell 5.1 may add a UTF-8 BOM.
++QString nativeAppDir()
++{
++    return QDir::toNativeSeparators(appDir().absolutePath());
++}
++
++QJsonObject readJson(const QString &path)
++{
++    QFile f(path);
++    if (!f.open(QIODevice::ReadOnly))
++        return {};
++    QByteArray data = f.readAll();
++    if (data.startsWith("\xEF\xBB\xBF"))  // PowerShell 5.1 writes a UTF-8 BOM
++        data.remove(0, 3);
++    return QJsonDocument::fromJson(data).object();
++}
++
++// ---------------------------------------------------------------------------
++// Checks
++// ---------------------------------------------------------------------------
++
++// setup_deps.ps1 stores the SHA256 of the requirements.txt it installed in
++// python-embed/.installed.json. A new requirements.txt (new release) therefore
++// triggers the download again.
+ bool pythonPackagesReady()
+ {
+     QFile req(appDir().filePath("requirements.txt"));
+@@ -41,25 +67,40 @@ bool pythonPackagesReady()
+     const QByteArray expected =
+         QCryptographicHash::hash(req.readAll(), QCryptographicHash::Sha256).toHex().toUpper();
+ 
+-    QFile stamp(appDir().filePath("python-embed/.installed.json"));
+-    if (!stamp.open(QIODevice::ReadOnly))
+-        return false;
+-    QByteArray data = stamp.readAll();
+-    if (data.startsWith("\xEF\xBB\xBF"))
+-        data.remove(0, 3);
+-
+-    const QJsonObject obj = QJsonDocument::fromJson(data).object();
+-    return obj.value("requirements").toString().toLatin1().toUpper() == expected;
++    const QJsonObject stamp = readJson(appDir().filePath("python-embed/.installed.json"));
++    return stamp.value("requirements").toString().toLatin1().toUpper() == expected;
+ }
+ 
+-bool popplerReady()
++bool isPopplerBin(const QString &dir)
+ {
+-    return QFileInfo::exists(appDir().filePath("poppler/Library/bin/pdftoppm.exe"));
++    return QFileInfo::exists(dir + "/pdftoppm.exe") && QFileInfo::exists(dir + "/pdfinfo.exe");
+ }
+ 
+-bool dependenciesReady()
++// Returns the folder with pdftoppm.exe and pdfinfo.exe, or an empty string.
++// Standard place is poppler/Library/bin (setup_deps.ps1). After a manual
++// download the user may unzip it elsewhere in the app folder, e.g.
++// poppler-24.08.0/Library/bin, so the other subfolders are searched too.
++QString findPopplerBin()
+ {
+-    return pythonPackagesReady() && popplerReady();
++    const QString standard = appDir().filePath("poppler/Library/bin");
++    if (isPopplerBin(standard))
++        return standard;
++
++    static const QStringList skip = { "python-embed", "workspace", "scripts", "models",
++                                      "database", "tessdata", "tools", "licenses" };
++    const QFileInfoList top = appDir().entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
++    for (const QFileInfo &d : top) {
++        if (skip.contains(d.fileName(), Qt::CaseInsensitive))
++            continue;
++        QDirIterator it(d.absoluteFilePath(), { "pdftoppm.exe" }, QDir::Files,
++                        QDirIterator::Subdirectories);
++        while (it.hasNext()) {
++            const QString bin = QFileInfo(it.next()).absolutePath();
++            if (isPopplerBin(bin))
++                return bin;
++        }
++    }
++    return {};
+ }
+ 
+ bool appDirWritable()
+@@ -68,17 +109,21 @@ bool appDirWritable()
+     return probe.open();
+ }
+ 
+-// Runs setup_deps.ps1 in a modal dialog that shows its output.
+-// Returns true when the script finished with exit code 0.
+-bool runSetupScript()
++// ---------------------------------------------------------------------------
++// Running setup_deps.ps1
++// ---------------------------------------------------------------------------
++
++// Runs setup_deps.ps1 with the given arguments in a modal dialog that shows
++// its output. Returns true when the script finished with exit code 0.
++bool runSetupScript(const QStringList &scriptArgs, const QString &what)
+ {
+     QDialog dlg;
+-    dlg.setWindowTitle(QStringLiteral("Control_GP – příprava prvního spuštění"));
++    dlg.setWindowTitle(QStringLiteral("Control_GP – stahování: %1").arg(what));
+     dlg.resize(760, 460);
+ 
+     auto *layout = new QVBoxLayout(&dlg);
+     auto *info = new QLabel(QStringLiteral(
+-        "Stahuji Python knihovny a Poppler. Podle rychlosti připojení to může trvat několik minut."));
++        "Stahuji %1. Podle rychlosti připojení to může trvat několik minut.").arg(what));
+     info->setWordWrap(true);
+     auto *progress = new QProgressBar;
+     progress->setRange(0, 0);  // indeterminate while the script runs
+@@ -101,8 +146,7 @@ bool runSetupScript()
+     bool ok = false;
+ 
+     QObject::connect(&proc, &QProcess::readyReadStandardOutput, &dlg, [&]() {
+-        const QString text = QString::fromLocal8Bit(proc.readAllStandardOutput());
+-        log->appendPlainText(text.trimmed());
++        log->appendPlainText(QString::fromLocal8Bit(proc.readAllStandardOutput()).trimmed());
+     });
+ 
+     QObject::connect(&proc, &QProcess::finished, &dlg,
+@@ -111,10 +155,9 @@ bool runSetupScript()
+         progress->setRange(0, 1);
+         progress->setValue(ok ? 1 : 0);
+         info->setText(ok
+-            ? QStringLiteral("Hotovo. Po zavření okna se aplikace spustí.")
+-            : QStringLiteral("Stažení se nepodařilo. Výpis výše ukazuje, kde nastala chyba. "
+-                             "Zkontrolujte připojení k internetu a spusťte aplikaci znovu, "
+-                             "případně spusťte Setup.cmd."));
++            ? QStringLiteral("Hotovo, můžete okno zavřít.")
++            : QStringLiteral("Stahování se nepodařilo. Výpis výše ukazuje, kde nastala chyba. "
++                             "Zkontrolujte připojení k internetu a spusťte aplikaci znovu."));
+         buttons->button(QDialogButtonBox::Close)->setEnabled(true);
+     });
+ 
+@@ -127,10 +170,10 @@ bool runSetupScript()
+         buttons->button(QDialogButtonBox::Close)->setEnabled(true);
+     });
+ 
+-    proc.start(QStringLiteral("powershell.exe"),
+-               { QStringLiteral("-NoProfile"),
+-                 QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+-                 QStringLiteral("-File"), QDir::toNativeSeparators(setupScriptPath()) });
++    QStringList args = { "-NoProfile", "-ExecutionPolicy", "Bypass",
++                         "-File", QDir::toNativeSeparators(setupScriptPath()) };
++    args << scriptArgs;
++    proc.start(QStringLiteral("powershell.exe"), args);
+ 
+     dlg.exec();
+ 
+@@ -143,41 +186,164 @@ bool runSetupScript()
+     return ok;
+ }
+ 
++// ---------------------------------------------------------------------------
++// Python packages
++// ---------------------------------------------------------------------------
++
++bool ensurePythonPackages()
++{
++    if (pythonPackagesReady())
++        return true;
++
++    const auto answer = QMessageBox::question(nullptr, kTitle,
++        QStringLiteral("Aplikace potřebuje Python knihovny (onnxruntime, OpenCV, numpy a další), "
++                       "které zatím nejsou stažené. Stažení má řádově 100 MB a proběhne jen jednou.\n\n"
++                       "Stáhnout knihovny nyní?"),
++        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
++    if (answer != QMessageBox::Yes) {
++        QMessageBox::information(nullptr, kTitle,
++            QStringLiteral("Bez Python knihoven nelze aplikaci spustit. "
++                           "Při příštím spuštění se aplikace zeptá znovu."));
++        return false;
++    }
++
++    if (runSetupScript({ "-Only", "python" }, QStringLiteral("Python knihovny")) && pythonPackagesReady())
++        return true;
++
++    QMessageBox::critical(nullptr, kTitle,
++        QStringLiteral("Python knihovny se nepodařilo připravit. Spusťte aplikaci znovu, "
++                       "případně spusťte Setup.cmd ve složce aplikace a sledujte výpis."));
++    return false;
++}
++
++// ---------------------------------------------------------------------------
++// Poppler
++// ---------------------------------------------------------------------------
++
++// Download URL and version of the Poppler build listed in deps.lock.
++void popplerFromLock(QString *url, QString *version)
++{
++    const QJsonObject poppler = readJson(appDir().filePath("deps.lock")).value("poppler").toObject();
++    *url = poppler.value("url").toString();
++    *version = poppler.value("version").toString();
++}
++
++// Manual download: open the ZIP URL in the browser and wait until the user
++// unzips it into the app folder. Returns true once Poppler is found.
++bool manualPopplerDownload()
++{
++    QString url, version;
++    popplerFromLock(&url, &version);
++    if (url.isEmpty())
++        url = QStringLiteral("https://github.com/oschwartz10612/poppler-windows/releases");
++    QDesktopServices::openUrl(QUrl(url));
++
++    for (;;) {
++        QMessageBox box;
++        box.setWindowTitle(kTitle);
++        box.setIcon(QMessageBox::Information);
++        box.setTextFormat(Qt::RichText);
++        box.setTextInteractionFlags(Qt::TextBrowserInteraction);
++        box.setText(QStringLiteral(
++            "<p>V prohlížeči se stahuje Poppler%1. Pokud stahování nezačalo, otevřete odkaz:<br>"
++            "<a href=\"%2\">%2</a></p>"
++            "<p>Stažený ZIP rozbalte do složky aplikace:<br><b>%3</b></p>"
++            "<p>Po rozbalení klikněte na <b>Zkontrolovat</b>.</p>")
++            .arg(version.isEmpty() ? QString() : QStringLiteral(" (verze %1)").arg(version.toHtmlEscaped()),
++                 url.toHtmlEscaped(), nativeAppDir().toHtmlEscaped()));
++        QPushButton *check = box.addButton(QStringLiteral("Zkontrolovat"), QMessageBox::AcceptRole);
++        QPushButton *folder = box.addButton(QStringLiteral("Otevřít složku aplikace"), QMessageBox::ActionRole);
++        box.addButton(QStringLiteral("Zrušit"), QMessageBox::RejectRole);
++        box.setDefaultButton(check);
++        box.exec();
++
++        if (box.clickedButton() == folder) {
++            QDesktopServices::openUrl(QUrl::fromLocalFile(appDir().absolutePath()));
++            continue;
++        }
++        if (box.clickedButton() != check)
++            return false;
++        if (!findPopplerBin().isEmpty())
++            return true;
++
++        QMessageBox::warning(nullptr, kTitle,
++            QStringLiteral("Poppler ve složce aplikace zatím není. Hledám soubory pdftoppm.exe "
++                           "a pdfinfo.exe ve složce Library\\bin uvnitř rozbaleného ZIPu.\n\n"
++                           "Zkontrolujte, že je ZIP rozbalený do:\n%1").arg(nativeAppDir()));
++    }
++}
++
++bool ensurePoppler()
++{
++    if (!findPopplerBin().isEmpty())
++        return true;
++
++    QMessageBox box;
++    box.setWindowTitle(kTitle);
++    box.setIcon(QMessageBox::Question);
++    box.setText(QStringLiteral(
++        "Aplikace potřebuje Poppler (nástroj pro převod PDF na obrázky), který zatím není stažený.\n\n"
++        "Doporučujeme automatické stažení. Při ručním stažení se otevře odkaz v prohlížeči "
++        "a ZIP rozbalíte do složky aplikace sami."));
++    QPushButton *autoBtn = box.addButton(QStringLiteral("Stáhnout automaticky"), QMessageBox::AcceptRole);
++    QPushButton *manualBtn = box.addButton(QStringLiteral("Stáhnout ručně"), QMessageBox::ActionRole);
++    box.addButton(QStringLiteral("Zrušit"), QMessageBox::RejectRole);
++    box.setDefaultButton(autoBtn);
++    box.exec();
++
++    bool ok = false;
++    if (box.clickedButton() == autoBtn) {
++        ok = runSetupScript({ "-Only", "poppler" }, QStringLiteral("Poppler"))
++             && !findPopplerBin().isEmpty();
++        if (!ok)
++            QMessageBox::critical(nullptr, kTitle,
++                QStringLiteral("Poppler se nepodařilo stáhnout. Spusťte aplikaci znovu "
++                               "a zkuste ruční stažení."));
++    } else if (box.clickedButton() == manualBtn) {
++        ok = manualPopplerDownload();
++    }
++
++    if (!ok)
++        QMessageBox::information(nullptr, kTitle,
++            QStringLiteral("Bez Poppleru nelze aplikaci spustit. "
++                           "Při příštím spuštění se aplikace zeptá znovu."));
++    return ok;
++}
++
++// The Python scripts read the Poppler folder from this variable.
++void exportPopplerPath()
++{
++    const QString bin = findPopplerBin();
++    if (!bin.isEmpty())
++        qputenv("CONTROL_GP_POPPLER_BIN", QDir::toNativeSeparators(bin).toUtf8());
++}
++
+ } // namespace
+ 
+ bool FirstRunSetup::ensureDependencies()
+ {
+     // Developer build: dependencies are synced next to the exe by CMake.
+-    if (!QFileInfo::exists(setupScriptPath()))
++    if (!QFileInfo::exists(setupScriptPath())) {
++        exportPopplerPath();
+         return true;
++    }
+ 
+-    if (dependenciesReady())
+-        return true;
++    const bool needPython  = !pythonPackagesReady();
++    const bool needPoppler = findPopplerBin().isEmpty();
+ 
+-    if (!appDirWritable()) {
+-        QMessageBox::critical(nullptr, QStringLiteral("Control_GP"),
++    if ((needPython || needPoppler) && !appDirWritable()) {
++        QMessageBox::critical(nullptr, kTitle,
+             QStringLiteral("Do složky aplikace nelze zapisovat:\n%1\n\n"
+                            "Rozbalte Control_GP do složky, kam máte právo zápisu, "
+-                           "například do Dokumentů, a spusťte ho znovu.")
+-                .arg(QDir::toNativeSeparators(appDir().absolutePath())));
++                           "například do Dokumentů, a spusťte ho znovu.").arg(nativeAppDir()));
+         return false;
+     }
+ 
+-    const auto answer = QMessageBox::question(nullptr, QStringLiteral("Control_GP"),
+-        QStringLiteral("Před prvním použitím je potřeba stáhnout Python knihovny a Poppler "
+-                       "(řádově 100 MB). Stažení proběhne jen jednou.\n\nStáhnout nyní?"),
+-        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+-    if (answer != QMessageBox::Yes)
++    if (needPython && !ensurePythonPackages())
+         return false;
+-
+-    if (!runSetupScript())
++    if (needPoppler && !ensurePoppler())
+         return false;
+ 
+-    if (!dependenciesReady()) {
+-        QMessageBox::critical(nullptr, QStringLiteral("Control_GP"),
+-            QStringLiteral("Závislosti se nepodařilo připravit. Spusťte prosím Setup.cmd "
+-                           "ve složce aplikace a sledujte výpis."));
+-        return false;
+-    }
++    exportPopplerPath();
+     return true;
+ }
+diff --git a/src/app/firstrunsetup.h b/src/app/firstrunsetup.h
+index f59a776..2203eac 100644
+--- a/src/app/firstrunsetup.h
++++ b/src/app/firstrunsetup.h
+@@ -1,19 +1,24 @@
+ #ifndef FIRSTRUNSETUP_H
+ #define FIRSTRUNSETUP_H
+ 
+-// First-run preparation of a released build.
++// Checks the runtime dependencies before the embedded Python starts.
+ //
+-// The release ZIP ships Control_GP.exe with the embeddable Python (without
+-// packages), but not the Python packages from requirements.txt nor Poppler.
+-// Before the interpreter starts, ensureDependencies() checks that both are in
+-// place and, if not, offers to run tools/setup_deps.ps1, showing its output.
++// A released build ships without the Python packages from requirements.txt
++// and without Poppler. ensureDependencies() checks both on every start and,
++// when something is missing, asks the user:
++//   - Python packages: download them now (runs tools/setup_deps.ps1 -Only python),
++//   - Poppler: download automatically (setup_deps.ps1 -Only poppler), or
++//     download it manually in the browser and unzip it into the app folder.
+ //
+-// In a developer build (no tools/setup_deps.ps1 next to the exe) the check is
+-// skipped, because the dependencies are synced there by CMake.
++// The Poppler folder that was found is passed to the Python scripts in the
++// environment variable CONTROL_GP_POPPLER_BIN.
++//
++// In a developer build (no tools/setup_deps.ps1 next to the exe) nothing is
++// downloaded, because CMake syncs the dependencies next to the exe.
+ namespace FirstRunSetup
+ {
+-    // Returns true when the application can start. Must be called after
+-    // QApplication is constructed and before PythonManager::bootstrapInterpreter().
++    // Returns true when the application can start. Call after QApplication is
++    // constructed and before PythonManager::bootstrapInterpreter().
+     bool ensureDependencies();
+ }
+ 
+-- 
+2.43.0
+

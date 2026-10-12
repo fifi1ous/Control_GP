@@ -3,7 +3,8 @@
     Downloads and prepares the runtime dependencies of Control_GP.
 
 .DESCRIPTION
-    Reads deps.lock and requirements.txt from the repository root and fills:
+    Reads deps.lock and requirements.txt from the repository root (or, in a
+    released build, from the application folder next to Control_GP.exe) and fills:
         python-embed/   embeddable Python + packages from requirements.txt
         poppler/        Poppler binaries (used by pdf2image)
 
@@ -18,8 +19,14 @@
 .PARAMETER Only
     Limit the run to some components: python, poppler.
 
+.PARAMETER SkipPackages
+    Install only the embeddable Python and pip, without the packages from
+    requirements.txt. Used by the release build; the packages are installed
+    on the user's machine before the first start.
+
 .PARAMETER TesseractDir
     Tesseract installation to check (not installed by this script).
+    The check is skipped in a released build, which bundles Tesseract.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File tools\setup_deps.ps1
@@ -32,6 +39,7 @@ param(
     [switch]$Force,
     [ValidateSet('python', 'poppler')]
     [string[]]$Only,
+    [switch]$SkipPackages,
     [string]$TesseractDir = 'C:\Program Files\Tesseract-OCR'
 )
 
@@ -45,6 +53,9 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $LockFile = Join-Path $RepoRoot 'deps.lock'
 $ReqFile  = Join-Path $RepoRoot 'requirements.txt'
 $CacheDir = Join-Path $RepoRoot '.deps-cache'
+
+# A released build has Control_GP.exe in the same folder as deps.lock.
+$IsAppDir = Test-Path -LiteralPath (Join-Path $RepoRoot 'Control_GP.exe')
 
 # Modules imported as a smoke test after pip install (import names, not package names)
 $SmokeImports = @('pypdf', 'pdf2image', 'PIL', 'onnxruntime', 'cv2', 'numpy', 'requests')
@@ -188,6 +199,13 @@ function Install-Python {
         Invoke-Checked $pyExe @($getPip, '--no-warn-script-location')
     }
 
+    if ($SkipPackages) {
+        # Empty requirements hash: the packages get installed on the next normal run.
+        Write-Stamp $dest @{ version = $version; requirements = '' }
+        Write-Ok "Python $version base ready in python-embed\ (packages skipped)"
+        return
+    }
+
     Write-Info 'Installing packages from requirements.txt'
     Invoke-Checked $pyExe @('-m', 'pip', 'install', '--no-warn-script-location',
                             '--disable-pip-version-check', '-r', $ReqFile)
@@ -287,8 +305,16 @@ foreach ($c in $components) {
     }
 }
 
-Test-Tesseract
-Test-BuildPython
-
 Write-Host ''
-Write-Host 'Done. You can now configure and build Control_GP with CMake / Qt Creator.' -ForegroundColor Green
+if ($IsAppDir) {
+    # Released build: Tesseract is bundled and nothing is compiled, so skip the
+    # developer checks and drop the download cache to save disk space.
+    if (Test-Path -LiteralPath $CacheDir) { Remove-Item -LiteralPath $CacheDir -Recurse -Force }
+    Write-Host 'Done. Control_GP is ready to run.' -ForegroundColor Green
+}
+else {
+    Test-Tesseract
+    Test-BuildPython
+    Write-Host ''
+    Write-Host 'Done. You can now configure and build Control_GP with CMake / Qt Creator.' -ForegroundColor Green
+}
