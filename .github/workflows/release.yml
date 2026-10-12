@@ -3,7 +3,9 @@
 #   merge / push to main  -> build; if the version in CMakeLists.txt
 #                            (project(Control_GP VERSION x.y.z)) has no release
 #                            yet, a GitHub Release vx.y.z is created with the ZIP
+#   pull request into main -> test build, ZIP as a workflow artifact
 #   Actions -> Release -> Run workflow -> test build, ZIP as a workflow artifact
+#                            (the button appears once this file is on main)
 #
 # A merge that keeps the same version only builds (as a check) and publishes
 # nothing, so bump the version in CMakeLists.txt when you want a new release.
@@ -17,6 +19,12 @@ name: Release
 
 on:
   push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
     branches: [main]
     paths-ignore:
       - '**/*.md'
@@ -51,7 +59,8 @@ jobs:
           if (-not $m) { throw 'project(Control_GP VERSION x.y.z) not found in CMakeLists.txt' }
           $tag = "v$($m.Matches[0].Groups[1].Value)"
           $exists = [bool](git ls-remote --tags origin "refs/tags/$tag")
-          $publish = ($env:GITHUB_EVENT_NAME -eq 'push') -and (-not $exists)
+          # Publish only on a push to main, never from a pull request or another branch.
+          $publish = ($env:GITHUB_EVENT_NAME -eq 'push') -and ($env:GITHUB_REF -eq 'refs/heads/main') -and (-not $exists)
           if ($exists) {
               "::notice::Release $tag already exists. Bump the version in CMakeLists.txt to publish a new one."
           }
